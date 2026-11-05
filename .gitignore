@@ -1,1 +1,4 @@
 /target
+
+# Local spec and ticket artifacts
+.scratch/
