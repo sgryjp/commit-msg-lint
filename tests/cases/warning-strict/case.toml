@@ -1,0 +1,2 @@
+args = ["--strict"]
+exit_code = 1

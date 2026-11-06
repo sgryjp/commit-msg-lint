@@ -1,0 +1,1 @@
+<stdin>:1: error[header-format] header does not match the Conventional Commit format

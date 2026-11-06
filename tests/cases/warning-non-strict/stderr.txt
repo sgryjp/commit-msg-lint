@@ -1,0 +1,1 @@
+<stdin>:1: warning[header-max-width] display width 51 exceeds 50

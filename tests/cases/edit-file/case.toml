@@ -1,0 +1,2 @@
+args = ["--edit", "edit-target.txt"]
+exit_code = 0

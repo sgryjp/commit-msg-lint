@@ -1,0 +1,3 @@
+tests/cases/**/*.txt text eol=lf
+tests/cases/**/*.toml text eol=lf
+tests/cases/README.md text eol=lf

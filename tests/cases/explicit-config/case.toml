@@ -1,0 +1,2 @@
+args = ["--config", "config.toml"]
+exit_code = 1
