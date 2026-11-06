@@ -1,0 +1,6 @@
+repos:
+  - repo: https://github.com/sgryjp/cjkfmt
+    rev: 0.0.10
+    hooks:
+      - id: cjkfmt-check
+        stages: [pre-commit]

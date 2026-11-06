@@ -6,6 +6,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install --locked cjkfmt --version 0.0.10
+      - run: python -m pip install --upgrade prek
+      - run: prek validate-config .pre-commit-config.yaml
+      - run: prek run --all-files
+
   test:
     strategy:
       fail-fast: false

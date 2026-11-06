@@ -1,0 +1,9 @@
+{
+  "ambiguous_width": "wide",
+  "line_wrapping": "split",
+  "max_width": 100,
+  "spacing": {
+    "alphabets": "require",
+    "digits": "require"
+  }
+}
