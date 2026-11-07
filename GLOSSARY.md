@@ -1,49 +1,54 @@
 # Commit Message Linter
 
-チームが共有するコミットメッセージ規約を検査するコンテキストである。
+This context covers how a team’s shared commit-message conventions are validated.
 
 ## Language
 
 **Conventional Commit**:
-Conventional Commits 仕様に従い、type、任意の scope、subject から構成されるコミットメッセージ。
-_Avoid_: Conventional Commits 形式、規約付きコミット
+A commit message that follows the Conventional Commits specification and consists of a type, an
+optional scope, and a subject.
+_Avoid_: Conventional Commits format, convention-based commit
 
 **Type**:
-コミットの変更種別を表す、Header の先頭に置かれる識別子。
-_Avoid_: category、kind
+An identifier at the start of the Header that indicates the kind of change.
+_Avoid_: category, kind
 
 **Scope**:
-Type が表す変更の対象をより具体化する、任意の Header 構成要素。
-_Avoid_: module、area
+An optional Header component that specifies the target of the change represented by the Type.
+_Avoid_: module, area
 
 **Subject**:
-Header で変更内容を短く表す、type と任意の scope に続く必須の要約。
-_Avoid_: description、summary
+A required summary in the Header that briefly describes the change and follows the type and optional
+scope.
+_Avoid_: description, summary
 
 **Header**:
-コミットメッセージの先頭行であり、Conventional Commit の type、任意の scope、subject を含む部分。
-_Avoid_: title、件名
+The first line of a commit message, containing the Conventional Commit type, optional scope, and
+subject.
+_Avoid_: title, subject line
 
 **Body**:
-Header を補足する、任意の自由形式の説明部分。
-_Avoid_: description、message
+An optional free-form section that explains or supplements the Header.
+_Avoid_: description, message
 
 **Footer**:
-Header または Body の後に置かれる、任意の Trailer 群からなる構造化された補足情報の部分。
+An optional section of structured supplementary information, made up of one or more Trailers and
+placed after the Header or Body.
 _Avoid_: metadata
 
 **Trailer**:
-Footer 内の token と値からなる構造化された補足情報の項目。
+A structured item in the Footer consisting of a token and a value.
 _Avoid_: footer entry
 
 **Display Column**:
-コミットメッセージの行長を測るための、Unicode 表示幅に基づく仮想的な一列分の幅。
-_Avoid_: byte length、character count
+A unit of visual width based on Unicode display width, used to measure commit-message line length.
+_Avoid_: byte length, character count
 
 **Lint Rule**:
-コミットメッセージの規約適合を判定し、違反時に重大度を伴う診断を生成する規則。
-_Avoid_: check、validator
+A rule that determines whether a commit message complies with the conventions and produces a
+diagnostic with a severity when it does not.
+_Avoid_: check, validator
 
 **Commit Message Linter**:
-チームのコミットメッセージ規約への適合を判定するツール。
-_Avoid_: formatter、commit generator
+A tool that determines whether a commit message complies with the team’s conventions.
+_Avoid_: formatter, commit generator
