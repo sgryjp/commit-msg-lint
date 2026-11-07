@@ -47,6 +47,11 @@ python scripts/check_fixture_discovery.py
 
 ## Markdown documents
 
+The user-facing references describe the current implementation. When changing CLI behavior,
+configuration, or Rules, update the relevant documents and examples alongside the code and tests.
+When updating the `unicode-width` crate or Unicode data, update the documented versions and
+conformance tests, and describe the change in the release notes.
+
 Tracked `.md` and `.markdown` files must be no more than 100 columns wide and must include a
 half-width space between Japanese text and adjacent ASCII letters or digits. Check for violations by
 running all files through your hook runner:

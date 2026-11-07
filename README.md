@@ -1,7 +1,10 @@
 # commit-msg-lint
 
-A Rust CLI that validates commit messages against the Conventional Commits
-specification using a TOML configuration.
+A Rust CLI that checks commit messages using Conventional Commit Rules and a TOML configuration.
+
+## Install and use
+
+From a checkout with the Rust toolchain installed:
 
 ```sh
 cargo install --path .
@@ -9,12 +12,22 @@ printf 'feat: add parser\n' | commit-msg-lint
 commit-msg-lint --edit .git/COMMIT_EDITMSG
 ```
 
-With `--strict`, warnings result in exit code 1. Use `--config <path>` to specify a configuration
-file. If `--config` is omitted, the CLI uses Git commands to find the repository root and reads
-`commit-msg-lint.toml` from there. See the
-[requirements](docs/requirements/commit-message-linter.md) for the configuration format and details
-about each Rule.
+By default, the CLI reads `commit-msg-lint.toml` from the Git repository root, if present. Use
+`--config <path>` to select another file. With `--strict`, warnings result in exit code 1.
 
-Display Column measurements use `unicode-width` 0.2.2 (Unicode 17.0.0). When updating the Unicode
-data, update this information and the conformance tests, and document the change in the release
-notes.
+To use the CLI from an existing `commit-msg` Git hook, call:
+
+```sh
+commit-msg-lint --edit "$1"
+```
+
+The CLI does not install or manage hooks. It checks a single message from a file or standard input;
+Git history inspection and custom Rules are not supported.
+
+## Reference
+
+- [CLI](docs/cli.md): options, input, diagnostics, and exit codes
+- [Configuration](docs/configuration.md): file format, defaults, and Rule settings
+- [Message format](docs/message-format.md): parsing and Rule behavior
+
+For development and documentation checks, see [Contributing](CONTRIBUTING.md).
