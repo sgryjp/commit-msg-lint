@@ -26,8 +26,9 @@ relative. The runner executes `CARGO_BIN_EXE_commit-msg-lint` from a temporary
 directory outside the repository, with an isolated home and Git environment.
 Git remains available so the CLI's default repository-configuration discovery
 is exercised without inheriting a parent repository or user configuration. The
-runner caps discovery with `GIT_CEILING_DIRECTORIES`; when the parent path cannot
-be encoded unambiguously as a Git path list, it uses an isolated nonexistent
+runner caps discovery with `GIT_CEILING_DIRECTORIES`, passing the parent path
+without quoting. Git splits this list on `;` on Windows and `:` on Unix. If the
+parent path contains that separator, the runner uses an isolated nonexistent
 `GIT_DIR` so Git reports that no repository was found. It never forces
 `--config`.
 

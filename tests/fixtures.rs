@@ -118,6 +118,11 @@ fn run_fixture_case(name: &str) {
     assert_eq!(output.stderr, case.stderr, "case {name}: stderr differs");
 }
 
+fn git_ceiling_path(ceiling: &Path) -> Option<&Path> {
+    let separator = if cfg!(windows) { b';' } else { b':' };
+    (!ceiling.as_os_str().as_encoded_bytes().contains(&separator)).then_some(ceiling)
+}
+
 fn execute_cli(name: &str, args: &[String], working_directory: &Path, home: &Path) -> Output {
     let stdin = File::open(working_directory.join("message.txt")).unwrap_or_else(|error| {
         panic!("case {name}: cannot open message.txt for standard input: {error}")
@@ -135,8 +140,8 @@ fn execute_cli(name: &str, args: &[String], working_directory: &Path, home: &Pat
     let ceiling = working_directory
         .parent()
         .expect("temporary working directory has a parent");
-    if let Ok(ceiling_path_list) = std::env::join_paths([ceiling]) {
-        command.env("GIT_CEILING_DIRECTORIES", ceiling_path_list);
+    if let Some(ceiling_path) = git_ceiling_path(ceiling) {
+        command.env("GIT_CEILING_DIRECTORIES", ceiling_path);
     } else {
         // Git cannot represent a ceiling path containing its path-list separator.
         command.env("GIT_DIR", home.join("no-repository"));
@@ -238,6 +243,19 @@ mod runner_validation_tests {
         assert!(output.stderr.is_empty());
     }
 
+    #[test]
+    fn git_ceiling_accepts_the_non_separator_character_and_rejects_the_separator() {
+        #[cfg(windows)]
+        let (representable, unrepresentable) =
+            (r"C:\fixtures\repository", r"C:\fixtures\repo;name");
+        #[cfg(not(windows))]
+        let (representable, unrepresentable) = ("/fixtures/repo;name", "/fixtures/repo:name");
+
+        let ceiling = Path::new(representable);
+        assert_eq!(git_ceiling_path(ceiling), Some(ceiling));
+        assert_eq!(git_ceiling_path(Path::new(unrepresentable)), None);
+    }
+
     #[rstest::rstest]
     #[case::ordinary_parent(false)]
     #[case::path_list_separator_in_parent(true)]
@@ -262,6 +280,7 @@ mod runner_validation_tests {
 
         let working_directory = repository.join("case-work");
         fs::create_dir(&working_directory).unwrap();
+        let working_directory = working_directory.canonicalize().unwrap();
         fs::write(working_directory.join("message.txt"), b"feat: add parser\n").unwrap();
         let home = working_directory.join("isolated-home");
         fs::create_dir(&home).unwrap();
@@ -276,12 +295,12 @@ mod runner_validation_tests {
         assert_eq!(discovered_root, repository.canonicalize().unwrap());
 
         let ceiling = working_directory.parent().unwrap();
-        if include_path_list_separator {
-            assert!(
-                std::env::join_paths([ceiling]).is_err(),
-                "test path does not exercise the requested path-list case"
-            );
-        }
+        assert_eq!(
+            git_ceiling_path(ceiling).is_none(),
+            include_path_list_separator,
+            "test path does not exercise the requested Git isolation case: {}",
+            ceiling.display()
+        );
 
         let output = execute_cli("ancestor-repository-config", &[], &working_directory, &home);
 
