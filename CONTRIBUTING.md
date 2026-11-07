@@ -56,14 +56,6 @@ pre-commit run --all-files
 prek run --all-files
 ```
 
-commit 前の hook を有効化する。
-
-```sh
-pre-commit install
-# または
-prek install
-```
-
 hook はファイルを変更しない。Markdown を修正するときは、対象ファイルを明示して整形し、差分を確認して
 から検査する。自動整形後も診断が残る場合は、Markdown 構造と意味を保ちながら手作業で修正する。
 
@@ -71,6 +63,19 @@ hook はファイルを変更しない。Markdown を修正するときは、対
 cjkfmt format --write README.md docs/example.md
 cjkfmt check README.md docs/example.md
 ```
+
+## Git hook
+
+commit 前の Markdown 検査とコミットメッセージ検査を有効化する。
+
+```sh
+pre-commit install --hook-type pre-commit --hook-type commit-msg
+# または
+prek install --hook-type pre-commit --hook-type commit-msg
+```
+
+`commit-msg` hook は `cargo run --locked` でこのリポジトリの `commit-msg-lint` を実行する。error が
+あるメッセージでは commit が失敗する。warning だけの場合は失敗しない。
 
 ## cjkfmt の更新
 

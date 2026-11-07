@@ -1,0 +1,4 @@
+version = 1
+
+[conventional]
+types = ["chore", "docs", "feat", "test"]
