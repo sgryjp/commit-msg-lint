@@ -1,83 +1,86 @@
-# 寄稿ガイド
+# Contributing
 
-このリポジトリでは、Rust 製 CLI と Markdown 文書を検証する。エージェント固有の運用は[AGENTS.
-md](AGENTS.md)を正とする。
+This repository validates a Rust CLI and Markdown documents. For agent-specific workflows, see
+[AGENTS.md](AGENTS.md), which is the authoritative guide.
 
-## 必要なツール
+## Required tools
 
-- stable Rust toolchain（`cargo`を含む）
+- Stable Rust toolchain, including `cargo`
 - Python 3
 - cjkfmt 0.0.10
-- pre-commit 4.4.0 以上、または互換性のある現在の prek
+- pre-commit 4.4.0 or later, or a compatible current version of prek
 
-cjkfmt は次のコマンドで導入する。
+Install cjkfmt with:
 
 ```sh
 cargo install --locked cjkfmt --version 0.0.10
 ```
 
-hook 実行器には pre-commit または prek のいずれかを導入する。利用中の環境に適した方法で、現在のリ
-リースへ更新しておく。
+Install either pre-commit or prek as your hook runner. Use the installation method appropriate for
+your environment, and make sure you have the latest release.
 
 ```sh
 python -m pip install --user --upgrade pre-commit
-# または
+# or
 python -m pip install --user --upgrade prek
 ```
 
-## 開発と検証
+## Development and validation
 
-すべての Rust テストを実行する。
+Run all Rust tests:
 
 ```sh
 cargo test --locked
 ```
 
-fixture-discovery 検査を実行する。
+Run the fixture-discovery check:
 
 ```sh
 python scripts/check_fixture_discovery.py
 ```
 
-Windows では、Python ランチャーを使う場合がある。
+On Windows, you may need to use the Python launcher:
 
 ```powershell
 python scripts/check_fixture_discovery.py
 ```
 
-## Markdown 文書
+## Markdown documents
 
-追跡対象の`.md`と`.markdown`は、最大 100 幅で、和文と半角英字・数字の境界に半角スペースを要求する。
-違反を確認するには、利用している hook 実行器で全ファイルを検査する。
+Tracked `.md` and `.markdown` files must be no more than 100 columns wide and must include a
+half-width space between Japanese text and adjacent ASCII letters or digits. Check for violations by
+running all files through your hook runner:
 
 ```sh
 pre-commit run --all-files
-# または
+# or
 prek run --all-files
 ```
 
-hook はファイルを変更しない。Markdown を修正するときは、対象ファイルを明示して整形し、差分を確認して
-から検査する。自動整形後も診断が残る場合は、Markdown 構造と意味を保ちながら手作業で修正する。
+The hooks do not modify files. When editing Markdown, format the target files explicitly and review
+the diff before running the checks. If automatic formatting leaves diagnostics, fix them by hand
+while preserving the Markdown structure and meaning.
 
 ```sh
 cjkfmt format --write README.md docs/example.md
 cjkfmt check README.md docs/example.md
 ```
 
-## Git hook
+## Git hooks
 
-commit 前の Markdown 検査とコミットメッセージ検査を有効化する。
+Enable Markdown checks before commits and commit-message checks:
 
 ```sh
 pre-commit install --hook-type pre-commit --hook-type commit-msg
-# または
+# or
 prek install --hook-type pre-commit --hook-type commit-msg
 ```
 
-`commit-msg` hook は `cargo run --locked` でこのリポジトリの `commit-msg-lint` を実行する。error が
-あるメッセージでは commit が失敗する。warning だけの場合は失敗しない。
+The `commit-msg` hook runs this repository's `commit-msg-lint` with `cargo run --locked`. A commit
+fails if the message has errors. Warnings alone do not cause failure.
 
-## cjkfmt の更新
+## Updating cjkfmt
 
-cjkfmt を更新するときは、hook 定義のリリース、CI で導入するバイナリの版、この文書の版を同じ変更で更
-新する。更新前後で全 Markdown の検査を実行する。
+When updating cjkfmt, update the hook release, the version of the binary installed in CI, and the
+version listed in this document in the same change. Run the checks on all Markdown files both before
+and after the update.

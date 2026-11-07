@@ -1,8 +1,11 @@
-# Display Column による行長測定
+# Measuring Line Length with Display Columns
 
-行長はバイト数や書記素クラスタ数ではなく、`unicode-width` crate の文字列幅
-アルゴリズムによる Display Column で測定する。日本語などの wide 文字は 2 列として
-扱い、`ambiguous-width` は既定で 1 列、設定で 2 列に変更できる。書記素クラスタ数は
-利用者が認識する文字数には適するが、`a` と `あ` を同じ長さにするため、コミットログの
-表示幅制約には適さない。端末・フォントによる完全な一致は保証できないので、crate と
-Unicode データの版を各リリースで固定し、更新を明示する。
+Measure line length in Display Columns using the `unicode-width` crate’s string-width algorithm,
+not by byte count or grapheme-cluster count. Wide characters, such as Japanese characters, count as
+two columns. Ambiguous-width characters count as one column by default, but can be configured to
+count as two. Grapheme-cluster counts better reflect the number of characters users perceive, but
+they count `a` and `あ` as the same length, so they are not suitable for commit-log display-width
+limits.
+
+Because terminal and font rendering cannot be matched exactly, pin the crate and Unicode data
+versions for each release and document any updates.
