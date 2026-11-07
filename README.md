@@ -2,6 +2,12 @@
 
 A Rust CLI that checks commit messages using Conventional Commit Rules and a TOML configuration.
 
+## Design philosophy
+
+- Measure display width using East Asian character widths, not character counts.
+- Separate recommended limits from required ones with warnings and errors, giving agents discretion
+  to preserve meaning.
+
 ## Install and use
 
 From a checkout with the Rust toolchain installed:

@@ -1,3 +1,8 @@
+## Design philosophy
+
+When designing or reviewing changes, check them against the
+[design philosophy](README.md#design-philosophy) and explain any trade-offs.
+
 ## Agent skills
 
 ### Issue tracker
