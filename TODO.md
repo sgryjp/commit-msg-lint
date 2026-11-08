@@ -12,11 +12,16 @@ feature. Group them by area; prioritize individual items when they are triaged.
 
 - [ ] Evaluate the independent Header and Footer parsing rules against Conventional Commits and
   Git trailer behavior, and identify compatibility gaps worth addressing.
-- [ ] Evaluate handling Git comment and scissors lines in `commit-msg` hooks; currently they are
-  checked as input rather than removed.
+- [ ] Evaluate how to handle Git comment and scissors lines in `commit-msg` hooks, including Git
+  cleanup and comment-character settings. Currently, lines that Git may remove are checked as input
+  and can cause a valid commit to fail. Consider how hook input should differ from standard input
+  and ordinary files.
 
 ## Integration and extensibility
 
+- [ ] After addressing Git message cleanup, document hook setup for private trials with Git 2.54+
+  config-based hooks and for shared use with pre-commit and prek. Evaluate providing a pre-commit
+  hook manifest.
 - [ ] Evaluate support for custom Rules or plugins.
 - [ ] Evaluate direct linting of Git history and commit ranges.
 - [ ] Evaluate hook installation and management.
