@@ -1,7 +1,7 @@
 # CLI reference
 
 ```text
-commit-msg-lint [--edit <path>] [--config <path>] [--strict]
+commit-msg-lint [OPTIONS]
 ```
 
 The CLI checks one commit message against its configured Rules. It does not modify the message or
@@ -14,18 +14,11 @@ install Git hooks.
 | `--edit <path>` | Read the message from a file instead of standard input. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
-| `-h`, `--help` | Print usage to standard output and exit successfully. |
+| `-h`, `--help` | Display command help and exit successfully. |
 | `-V`, `--version` | Print the program name and version to standard output and exit successfully. |
 
-Options can appear in any order. `--edit`, `--config`, and `--strict` may each appear at most once.
-Paths are separate arguments, not `--option=value`; they must be nonempty and cannot start with
-`-`. Use a prefix such as `./` for a relative filename that starts with `-`. Relative paths are
-resolved from the current working directory. Positional arguments, unknown options, repeated
-options, and `--` are errors.
-
-Arguments are processed from left to right. Help or version exits immediately when encountered:
-arguments after it are not checked, and configuration and input are not read. Errors encountered
-before it still fail; in particular, `--help` or `--version` cannot be used as an option's path.
+Options can appear in any order and each may be used once. Relative paths passed to `--edit` and
+`--config` are resolved from the current working directory.
 
 ## Examples
 
@@ -73,8 +66,7 @@ Line numbers start at 1. Diagnostics are sorted by line number and then Rule ID.
 ```
 
 A successful lint run with no diagnostics prints nothing. Warnings are still printed when they do
-not cause failure. CLI, configuration, discovery, and input errors are also written to standard
-error, prefixed with `commit-msg-lint:`.
+not cause failure. Lint diagnostics and command errors are written to standard error.
 
 | Exit code | Meaning |
 | --- | --- |

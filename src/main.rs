@@ -1,59 +1,35 @@
 mod config;
 mod lint;
 
-use std::ffi::OsString;
+use clap::Parser;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+#[derive(Parser)]
+#[command(
+    name = "commit-msg-lint",
+    version,
+    about = "Lint a commit message using the configured Rules."
+)]
 struct Arguments {
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the message from a file instead of standard input."
+    )]
     edit: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Use the specified configuration file instead of discovering one."
+    )]
     config: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Treat warnings as failures for the exit code without changing their severity."
+    )]
     strict: bool,
-}
-
-fn arguments() -> Result<Option<Arguments>, String> {
-    let mut args = std::env::args_os().skip(1);
-    let mut result = Arguments {
-        edit: None,
-        config: None,
-        strict: false,
-    };
-    while let Some(arg) = args.next() {
-        match arg.to_str() {
-            Some("--help" | "-h") => {
-                println!("Usage: commit-msg-lint [--edit <path>] [--config <path>] [--strict]");
-                return Ok(None);
-            }
-            Some("--version" | "-V") => {
-                println!("commit-msg-lint {}", env!("CARGO_PKG_VERSION"));
-                return Ok(None);
-            }
-            Some("--strict") if !result.strict => result.strict = true,
-            Some("--edit") if result.edit.is_none() => {
-                result.edit = Some(path_argument("--edit", args.next())?);
-            }
-            Some("--config") if result.config.is_none() => {
-                result.config = Some(path_argument("--config", args.next())?);
-            }
-            _ => {
-                return Err(format!(
-                    "unknown or repeated argument: {}",
-                    arg.to_string_lossy()
-                ));
-            }
-        }
-    }
-    Ok(Some(result))
-}
-
-fn path_argument(option: &str, value: Option<OsString>) -> Result<PathBuf, String> {
-    match value {
-        Some(value) if !value.is_empty() && !value.to_string_lossy().starts_with('-') => {
-            Ok(value.into())
-        }
-        _ => Err(format!("{option} requires a path")),
-    }
 }
 
 fn discover_config() -> Result<Option<PathBuf>, String> {
@@ -80,9 +56,7 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
 }
 
 fn run() -> Result<u8, String> {
-    let Some(args) = arguments()? else {
-        return Ok(0);
-    };
+    let args = Arguments::parse();
     let config_path = match args.config {
         Some(path) => Some(path),
         None => discover_config()?,

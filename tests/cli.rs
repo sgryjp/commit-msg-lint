@@ -44,6 +44,21 @@ fn stderr(output: &Output) -> &str {
 }
 
 #[test]
+fn help_explains_how_each_option_affects_linting() {
+    let dir = TestDir::new();
+    let output = dir.command(&["--help"], b"");
+    assert_eq!(output.status.code(), Some(0));
+    let help = std::str::from_utf8(&output.stdout).unwrap();
+    assert!(help.contains("Read the message from a file instead of standard input."));
+    assert!(help.contains("Use the specified configuration file instead of discovering one."));
+    assert!(
+        help.contains(
+            "Treat warnings as failures for the exit code without changing their severity."
+        )
+    );
+}
+
+#[test]
 fn standard_input_and_strict_exit_codes_match_severity() {
     let dir = TestDir::new();
     let output = dir.command(&[], b"feat: add parser\n");
@@ -63,6 +78,18 @@ fn standard_input_and_strict_exit_codes_match_severity() {
         assert!(stderr(&output).contains(&format!("<stdin>:1: {severity}[header-max-width]")));
         assert_eq!(stderr(&output).lines().count(), 1);
     }
+}
+
+#[test]
+fn long_options_accept_equals_syntax() {
+    let dir = TestDir::new();
+    fs::write(dir.0.join("message"), "feat: change\n").unwrap();
+    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+
+    let output = dir.command(&["--config=rules.toml", "--edit=message"], b"ignored");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
 }
 
 #[test]

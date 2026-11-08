@@ -236,10 +236,9 @@ mod runner_validation_tests {
         let output = execute_cli("large-help", &["--help".into()], &working_directory, &home);
 
         assert_eq!(output.status.code(), Some(0));
-        assert_eq!(
-            output.stdout,
-            b"Usage: commit-msg-lint [--edit <path>] [--config <path>] [--strict]\n"
-        );
+        let help = std::str::from_utf8(&output.stdout).unwrap();
+        assert!(help.contains("Usage: commit-msg-lint [OPTIONS]"));
+        assert!(help.contains("--edit <PATH>"));
         assert!(output.stderr.is_empty());
     }
 
