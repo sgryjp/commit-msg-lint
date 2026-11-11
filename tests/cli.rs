@@ -28,7 +28,8 @@ impl TestDir {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(input).unwrap();
+        // The process may exit before reading stdin (e.g. argument errors).
+        let _ = child.stdin.take().unwrap().write_all(input);
         child.wait_with_output().unwrap()
     }
 }
