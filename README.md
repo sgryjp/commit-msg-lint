@@ -30,6 +30,11 @@ commit-msg-lint --edit "$1"
 The CLI does not install or manage hooks. It checks a single message from a file or standard input;
 Git history inspection and custom Rules are not supported.
 
+## Web demo
+
+The `web` crate compiles the linter to WebAssembly for the demo page in `site/`. It is deployed to
+GitHub Pages by `.github/workflows/pages.yml` (set the Pages source to "GitHub Actions").
+
 ## Reference
 
 - [CLI](docs/cli.md): options, input, diagnostics, and exit codes

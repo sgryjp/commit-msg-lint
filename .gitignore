@@ -2,3 +2,4 @@
 
 # Local spec and ticket artifacts
 .scratch/
+site/pkg/
