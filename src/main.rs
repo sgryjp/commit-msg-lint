@@ -1,7 +1,5 @@
-mod config;
-mod lint;
-
 use clap::Parser;
+use commit_msg_lint::{config, lint};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};

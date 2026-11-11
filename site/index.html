@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>commit-msg-lint demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+  textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
+  .error { color: #b00020; }
+  .warning { color: #9a6700; }
+</style>
+</head>
+<body>
+<h1>commit-msg-lint</h1>
+<p>Everything runs in your browser; nothing is sent to a server.</p>
+<h2>Commit message</h2>
+<textarea id="message" rows="8">feat: add parser</textarea>
+<h2>Configuration (TOML, optional)</h2>
+<textarea id="config" rows="6" placeholder="version = 1"></textarea>
+<h2>Diagnostics</h2>
+<ul id="result"></ul>
+<script type="module">
+import init, { lint } from "./pkg/commit_msg_lint_web.js";
+
+const message = document.getElementById("message");
+const config = document.getElementById("config");
+const result = document.getElementById("result");
+
+function render() {
+  result.replaceChildren();
+  const add = (text, cls) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    if (cls) li.className = cls;
+    result.append(li);
+  };
+  try {
+    const diagnostics = JSON.parse(lint(message.value, config.value));
+    if (diagnostics.length === 0) add("No problems found.");
+    for (const d of diagnostics) {
+      add(`${d.line}: ${d.severity}[${d.rule}] ${d.message}`, d.severity);
+    }
+  } catch (e) {
+    add(String(e), "error");
+  }
+}
+
+await init();
+message.addEventListener("input", render);
+config.addEventListener("input", render);
+render();
+</script>
+</body>
+</html>
