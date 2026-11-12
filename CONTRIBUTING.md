@@ -45,6 +45,28 @@ On Windows, you may need to use the Python launcher:
 python scripts/check_fixture_discovery.py
 ```
 
+## Web demo
+
+To build and preview the WebAssembly demo locally, install the WebAssembly target and `wasm-pack`:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install --locked wasm-pack
+wasm-pack build web --target web --release --out-dir ../site/pkg
+```
+
+Serve the generated files over HTTP rather than opening `site/index.html` directly:
+
+```sh
+cd site
+python -m http.server 8000
+```
+
+Open <http://localhost:8000/> in a browser. The generated `site/pkg/` directory is ignored by Git.
+
+The [Pages workflow](.github/workflows/pages.yml) builds and deploys the demo on pushes to `main`
+and can also be run manually. The repository's GitHub Pages source must be set to GitHub Actions.
+
 ## Markdown documents
 
 The user-facing references describe the current implementation. When changing CLI behavior,
