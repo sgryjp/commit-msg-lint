@@ -237,7 +237,9 @@ mod runner_validation_tests {
 
         assert_eq!(output.status.code(), Some(0));
         let help = std::str::from_utf8(&output.stdout).unwrap();
-        assert!(help.contains("Usage: commit-msg-lint [OPTIONS]"));
+        assert!(help.lines().any(|line| {
+            line.starts_with("Usage: commit-msg-lint") && line.ends_with(" [OPTIONS]")
+        }));
         assert!(help.contains("--edit <PATH>"));
         assert!(output.stderr.is_empty());
     }
