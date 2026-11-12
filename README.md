@@ -32,8 +32,9 @@ Git history inspection and custom Rules are not supported.
 
 ## Web demo
 
-The `web` crate compiles the linter to WebAssembly for the demo page in `site/`. It is deployed to
-GitHub Pages by `.github/workflows/pages.yml` (set the Pages source to "GitHub Actions").
+[Try the web demo](https://sgryjp.github.io/commit-msg-lint/) to check a commit message with an
+optional TOML configuration, without installing the CLI. The linter runs in your browser; the
+message and configuration are not sent to a server.
 
 ## Reference
 
