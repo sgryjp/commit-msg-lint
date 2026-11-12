@@ -43,9 +43,12 @@ commitlint CLI
 
 1. `conventional-changelog-angular` を読み込み、その `parser`(旧 `parserOpts`)を既定値にする。
 2. `fieldPattern: null` を強制する(後述のメタフィールド機能を無効化)。
-3. ユーザー指定の parserOpts を上に重ねる(フラット形式・`parser` キー入れ子形式の両方を受け付ける)。
-4. `new CommitParser(opts).parse(message)` を実行する。パーサー関数自体も差し替え可能(`opts.parser`)。
-5. ヘッダーにマッチしなかった場合 `type`/`scope`/`subject` は `undefined` になるため、`null` に正規化する。
+3. ユーザー指定の parserOpts を上に重ねる
+   (フラット形式・`parser` キー入れ子形式の両方を受け付ける)。
+4. `new CommitParser(opts).parse(message)` を実行する。
+   パーサー関数自体も差し替え可能(`opts.parser`)。
+5. ヘッダーにマッチしなかった場合 `type`/`scope`/`subject` は `undefined` になるため、
+   `null` に正規化する。
 6. `parsed.raw = message` を付与する。
 
 つまり commitlint 固有の解析ロジックはほぼなく、正規化と `raw` 付与だけである。
@@ -54,13 +57,12 @@ commitlint CLI
 
 ### 3.1 構成要素
 
-| ファイル | 役割 |
-|---|---|
-| `CommitParser.ts` (466 行) | 状態機械本体。`lines` 配列と `lineIndex` カーソルを持つ |
-| `regex.ts` | オプションから派生正規表現(notes / references / footerToken 等)を生成 |
-| `options.ts` | 既定オプション |
-| `utils.ts` | 改行トリム、コメント行除去、シザー行での切り捨て、GPG 行除去、キャプチャ→フィールド割り当て |
-| `stream.ts` | 複数コミットを async iterable / Node Stream で処理するラッパー |
+- `CommitParser.ts`(466 行): 状態機械本体。`lines` 配列と `lineIndex` カーソルを持つ。
+- `regex.ts`: オプションから派生正規表現(notes / references / footerToken 等)を生成。
+- `options.ts`: 既定オプション。
+- `utils.ts`: 改行トリム、コメント行除去、シザー行での切り捨て、GPG 行除去、
+  キャプチャ→フィールド割り当て。
+- `stream.ts`: 複数コミットを async iterable / Node Stream で処理するラッパー。
 
 コンストラクタで正規表現を一度だけ生成し、`parse()` ごとに状態(`lines`, `lineIndex`, `commit`)を
 リセットする。インスタンスは使い回せるがスレッドセーフではない(JS なので問題にならない)。
@@ -164,16 +166,23 @@ conventionalcommits プリセットの値:
 
 conventionalcommits プリセット + `commentChar: '#'` で確認した。
 
-| 入力 | 結果 | 所見 |
-|---|---|---|
-| `feat(api)!: drop v1` | type=feat, scope=api, notes=[{BREAKING CHANGE, "drop v1"}] | `!` は notes に subject を複製する形で表現される。`breaking` フラグはない |
-| `Update readme` | header のみ。type/scope/subject は `undefined` | ヘッダー不一致はエラーにならない。commitlint が `null` 化し、`type-empty` 等のルールで落とす |
-| `fix: x\n\nThis explains.\nNote: something here\nmore body text\n\nRefs: #12` | body=`This explains.`, footer=`Note: something here\nmore body text\n\nRefs: #12` | 本文中の `Note:` で footer に遷移し、以降の本文も footer 扱いになる |
-| `feat: y\n\nbody\n\nBREAKING CHANGE: old api removed\ncontinues here\nReviewed-by: Z` | note.text=`old api removed\ncontinues here` | note の継続行は取り込み、次のトレーラーで閉じる |
-| `fix: z\n\n  Key: value inside body` | body 扱い | インデント行は footer にならない |
-| `fix: a\n\nCloses #3, #4 and owner/repo#5\nsee https://x.io/#7` | body=`""`(null でない), refs 3 件 | `Closes #3` が footerToken にマッチし footer 化。body が空文字になる。`raw` に `", #4"` のような前置テキストが混入する。URL 内の `#7` は無視 |
-| コメント行・シザー行を含む入力 | 除去済み | 前処理で行ごと消える |
-| `feat(ui): 日本語の件名` | 正常 | ヘッダー正規表現は subject の文字種を問わない |
+- `feat(api)!: drop v1`: type=feat, scope=api, notes=[{BREAKING CHANGE, "drop v1"}]。
+  `!` は notes に subject を複製する形で表現される。`breaking` フラグはない。
+- `Update readme`: header のみ。type/scope/subject は `undefined`。
+  ヘッダー不一致はエラーにならない。commitlint が `null` 化し、`type-empty` 等のルールで落とす。
+- `fix: x\n\nThis explains.\nNote: something here\nmore body text\n\nRefs: #12`:
+  body=`This explains.`, footer=`Note: something here\nmore body text\n\nRefs: #12`。
+  本文中の `Note:` で footer に遷移し、以降の本文も footer 扱いになる。
+- `feat: y\n\nbody\n\nBREAKING CHANGE: old api removed\ncontinues here\nReviewed-by: Z`:
+  note.text=`old api removed\ncontinues here`。
+  note の継続行は取り込み、次のトレーラーで閉じる。
+- `fix: z\n\n  Key: value inside body`: body 扱い。インデント行は footer にならない。
+- `fix: a\n\nCloses #3, #4 and owner/repo#5\nsee https://x.io/#7`:
+  body=`""`(null でない), refs 3 件。`Closes #3` が footerToken にマッチし footer 化。
+  body が空文字になる。`raw` に `", #4"` のような前置テキストが混入する。
+  URL 内の `#7` は無視。
+- コメント行・シザー行を含む入力: 除去済み。前処理で行ごと消える。
+- `feat(ui): 日本語の件名`: 正常。ヘッダー正規表現は subject の文字種を問わない。
 
 ## 5. ルール側との責務分担
 
@@ -257,13 +266,17 @@ commitlint のパーサーから引き継ぐべき点と変えるべき点を整
 
 - `commitlint/@commitlint/parse/src/index.ts`
 - `commitlint/@commitlint/lint/src/lint.ts`
-- `commitlint/@commitlint/rules/src/{body-leading-blank,footer-leading-blank,header-max-length,header-trim,header-breaking-change,body-max-line-length,footer-max-line-length}.ts`
+- `commitlint/@commitlint/rules/src/` 内の以下のファイル:
+  `body-leading-blank.ts`, `footer-leading-blank.ts`, `header-max-length.ts`, `header-trim.ts`,
+  `header-breaking-change.ts`, `body-max-line-length.ts`, `footer-max-line-length.ts`
 - `commitlint/@commitlint/ensure/src/{max-length,max-line-length}.ts`
 - `commitlint/@commitlint/is-ignored/src/defaults.ts`
 - `commitlint/@commitlint/config-conventional/src/index.ts`
-- `conventional-changelog/packages/conventional-commits-parser/src/{CommitParser,regex,utils,options,types,stream}.ts`
+- `conventional-changelog/packages/conventional-commits-parser/src/` 内の以下のファイル:
+  `CommitParser.ts`, `regex.ts`, `utils.ts`, `options.ts`, `types.ts`, `stream.ts`
 - `conventional-changelog/packages/conventional-commits-parser/CHANGELOG.md`
-- `conventional-changelog/packages/conventional-changelog-conventionalcommits/src/{parser,constants}.js`
+- `conventional-changelog/packages/conventional-changelog-conventionalcommits/src/` 内の
+  `parser.js`, `constants.js`
 - `conventional-changelog/packages/conventional-changelog-angular/src/parser.js`
 
 リポジトリ:

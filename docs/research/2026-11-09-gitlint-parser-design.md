@@ -26,9 +26,10 @@
 
 ```
 gitlint CLI (cli.py, click)
-  └ build_git_context()        入力源を決める: --msg-filename > stdin > ローカルリポジトリ (git log)
-       └ GitContext.from_commit_msg / from_staged_commit / from_local_repository
-            └ GitCommitMessage.from_full_message(context, text)   ← パーサー本体
+  ├ build_git_context()        入力源の優先順:
+  │    │                       --msg-filename > stdin > ローカルリポジトリ (git log)
+  │    └ GitContext.from_commit_msg / from_staged_commit / from_local_repository
+  │         └ GitCommitMessage.from_full_message(context, text)   ← パーサー本体
   └ GitLinter.lint(commit)     (lint.py)
        ├ ConfigurationRule.apply()      I1〜I4: 設定やメッセージ自体を書き換える
        ├ 特殊コミット判定でスキップ       merge / squash / fixup / fixup_amend / revert
@@ -37,12 +38,11 @@ gitlint CLI (cli.py, click)
        └ CommitRule                       コミット全体に適用、line_nr はルールが任意に決める
 ```
 
-| ファイル | 行数 | 役割 |
-|---|---|---|
-| `git.py` | 466 | git コマンド呼び出し、`GitContext`、`GitCommitMessage`(パーサー)、`GitCommit` 系 |
-| `lint.py` | 128 | ルール分類と適用、行番号付与、違反のソート |
-| `rules.py` | 493 | 組み込みルール(T1〜T8, B1〜B8, M1, I1〜I4) |
-| `contrib/rules/*.py` | — | CT1(Conventional Commits)、CC1(Signed-off-by)、CC2、CC3 |
+- `git.py`(466 行): git コマンド呼び出し、`GitContext`、`GitCommitMessage`(パーサー)、
+  `GitCommit` 系
+- `lint.py`(128 行): ルール分類と適用、行番号付与、違反のソート
+- `rules.py`(493 行): 組み込みルール(T1〜T8, B1〜B8, M1, I1〜I4)
+- `contrib/rules/*.py`: CT1(Conventional Commits)、CC1(Signed-off-by)、CC2、CC3
 
 パーサーと git コマンド実行が同じモジュールにあり、`GitCommitMessage` はコメント文字を得るために
 `GitContext` を引数に取る。
@@ -117,27 +117,37 @@ class GitCommitMessage:
 既定設定 + `contrib=contrib-title-conventional-commits` で確認した
 (コメント文字は明記しない限り `#`)。
 
-| 入力 | 結果 | 所見 |
-|---|---|---|
-| `feat(api)!: drop v1` + 本文 | 違反なし | `!` は CT1 の正規表現で許容されるだけで、破壊的変更として扱われない |
-| `Update readme` | `1: CT1` 形式不一致 | ヘッダー不一致はパースエラーではなくルール違反 |
-| `feat(a(b)): x ...` | `1: CT1` 形式不一致 | scope は `[^)]+?` で入れ子の括弧を許さない(commitlint は `a(b)` を scope とする) |
-| `feat:no space` / `feat(): x` | `1: CT1` 形式不一致 | `: ` の空白必須、空 scope 不可 |
-| `Feat: x` / `feat (api): x` | `1: CT1` 許可 type でない | type 部は `[^(]+?` で空白も含みうる。`feat (api)` の type は `"feat "` と解釈され、「type が不正」という的外れなメッセージになる |
-| `fix: c\nbody immediately` | `2: B4` 2 行目が空でない、`3: B6` 本文なし | 空行欠落を B4 が検出。body が 1 要素なので B6 も同時に出る |
-| `\nfix: leading blank` | title=`""`、`1: CT1`、`1: T8`、`2: B4` | 先頭空行を除去しないため、実際のヘッダーが body に落ちる |
-| `#123 fix the issue` + 本文 | title=`""` | issue 番号で始まる件名がコメントとして消える(Git のクリーンアップと同じ結果ではある) |
-| `fix: x\n# a comment\n\nbody(95 文字)` | `3: B1` | 長すぎる行は元ファイルの 4 行目だが、コメント除去後の番号 3 で報告される |
-| シザー行 + 差分 | シザー以降は無視 | 完全一致時のみ。インデント付きシザー行は本文として残る |
-| CRLF 改行 | 正常 | `splitlines()` が `\r\n` を吸収する |
-| 件名に `U+2028` を含む | title が分割され、後半が body の 1 行目に | Git は 1 行とみなす |
-| `feat(ui): ` + 全角 45 文字 | 違反なし(len=55) | EAW 幅では 100 桁だが、コードポイント数で測るため T1(72)に掛からない |
-| 件名に絵文字 2 つ | 各 1 文字として計数 | サロゲートペアの問題はない(UTF-16 長の commitlint とは異なる) |
-| `core.commentChar=auto`、本文に `auto this line ...` | その行が除去される | `auto` を文字列として前置一致させている |
-| `core.commentChar=;` | `;` 行が除去、`#` 行は残る | 正しく追従する |
-| 空文字列 | `1: CT1`、`1: T8`、`3: B6` | 存在しない 3 行目を指す違反が出る |
-| `BREAKING CHANGE: ...` と `Signed-off-by: ...` を含む | 本文の 2 行として扱われる | footer の概念がない |
-| `ignore-body-lines` で `Signed-off-by` 行を除外 | 後続の長い行が `4: B1`(元は 5 行目) | 設定ルールが body を書き換え、行番号がさらにずれる |
+- `feat(api)!: drop v1` + 本文: 違反なし。`!` は CT1 の正規表現で許容されるだけで、
+  破壊的変更として扱われない。
+- `Update readme`: `1: CT1` 形式不一致。ヘッダー不一致はパースエラーではなくルール違反。
+- `feat(a(b)): x ...`: `1: CT1` 形式不一致。scope は `[^)]+?` で入れ子の括弧を許さない
+  (commitlint は `a(b)` を scope とする)。
+- `feat:no space` / `feat(): x`: `1: CT1` 形式不一致。`: ` の空白必須、空 scope 不可。
+- `Feat: x` / `feat (api): x`: `1: CT1` 許可 type でない。type 部は `[^(]+?` で空白も含みうる。
+  `feat (api)` の type は `"feat "` と解釈され、「type が不正」という的外れなメッセージになる。
+- `fix: c\nbody immediately`: `2: B4` 2 行目が空でない、`3: B6` 本文なし。
+  空行欠落を B4 が検出。body が 1 要素なので B6 も同時に出る。
+- `\nfix: leading blank`: title=`""`、`1: CT1`、`1: T8`、`2: B4`。
+  先頭空行を除去しないため、実際のヘッダーが body に落ちる。
+- `#123 fix the issue` + 本文: title=`""`。issue 番号で始まる件名がコメントとして消える
+  (Git のクリーンアップと同じ結果ではある)。
+- `fix: x\n# a comment\n\nbody(95 文字)`: `3: B1`。長すぎる行は元ファイルの 4 行目だが、
+  コメント除去後の番号 3 で報告される。
+- シザー行 + 差分: シザー以降は無視。完全一致時のみ。インデント付きシザー行は本文として残る。
+- CRLF 改行: 正常。`splitlines()` が `\r\n` を吸収する。
+- 件名に `U+2028` を含む: title が分割され、後半が body の 1 行目に。Git は 1 行とみなす。
+- `feat(ui): ` + 全角 45 文字: 違反なし(len=55)。EAW 幅では 100 桁だが、
+  コードポイント数で測るため T1(72)に掛からない。
+- 件名に絵文字 2 つ: 各 1 文字として計数。サロゲートペアの問題はない
+  (UTF-16 長の commitlint とは異なる)。
+- `core.commentChar=auto`、本文に `auto this line ...`: その行が除去される。
+  `auto` を文字列として前置一致させている。
+- `core.commentChar=;`: `;` 行が除去、`#` 行は残る。正しく追従する。
+- 空文字列: `1: CT1`、`1: T8`、`3: B6`。存在しない 3 行目を指す違反が出る。
+- `BREAKING CHANGE: ...` と `Signed-off-by: ...` を含む: 本文の 2 行として扱われる。
+  footer の概念がない。
+- `ignore-body-lines` で `Signed-off-by` 行を除外: 後続の長い行が `4: B1`(元は 5 行目)。
+  設定ルールが body を書き換え、行番号がさらにずれる。
 
 ## 5. ルール層の設計
 
@@ -208,17 +218,23 @@ URL 免除のような例外はなく、必要なら `ignore-body-lines` で行�
 
 ## 7. commitlint との比較
 
-| 観点 | commitlint (`conventional-commits-parser`) | gitlint |
-|---|---|---|
-| パーサーの規模 | 状態機械 466 行 + 正規表現生成 | 15 行 |
-| 出力 | header / type / scope / subject / body / footer / notes / references ほか | title / body(行配列) |
-| Conventional Commits の知識 | パーサープリセット(正規表現)で注入 | contrib ルール CT1 の正規表現のみ |
-| footer 判定 | footer トークン行で一方向遷移(本文中の `Note:` で誤遷移) | footer 概念なし |
-| 空行の扱い | 区切りとして使わない。`body-leading-blank` が `raw` を再分割 | body の要素 `""` として残し、B4 が `body[0]` を見る |
-| 位置情報 | なし | 行番号のみ(除去後の番号でずれる) |
-| 長さの単位 | UTF-16 コードユニット | Unicode コードポイント |
-| コメント文字 | `commentChar` オプション(設定で指定) | `git config core.commentchar` を実行して取得 |
-| 結果の可変性 | 不変(`raw` を付けて返すだけ) | I3 が body を書き換える |
+commitlint は `conventional-commits-parser` を用いる。
+
+- **パーサーの規模**: commitlint は状態機械 466 行 + 正規表現生成。gitlint は 15 行。
+- **出力**: commitlint は header / type / scope / subject / body / footer / notes / references
+  ほか。gitlint は title / body(行配列)。
+- **Conventional Commits の知識**: commitlint はパーサープリセット(正規表現)で注入。
+  gitlint は contrib ルール CT1 の正規表現のみ。
+- **footer 判定**: commitlint は footer トークン行で一方向遷移
+  (本文中の `Note:` で誤遷移)。gitlint は footer 概念なし。
+- **空行の扱い**: commitlint は区切りとして使わず、`body-leading-blank` が `raw` を再分割。
+  gitlint は body の要素 `""` として残し、B4 が `body[0]` を見る。
+- **位置情報**: commitlint はなし。gitlint は行番号のみ(除去後の番号でずれる)。
+- **長さの単位**: commitlint は UTF-16 コードユニット。gitlint は Unicode コードポイント。
+- **コメント文字**: commitlint は `commentChar` オプション(設定で指定)。
+  gitlint は `git config core.commentchar` を実行して取得。
+- **結果の可変性**: commitlint は不変(`raw` を付けて返すだけ)。
+  gitlint は I3 が body を書き換える。
 
 両者とも、パース結果の不足をルール側の再解析で補っている点は共通である。
 commitlint は「構造は豊富だが位置がない」、gitlint は「構造も位置もほぼない」と言える。
@@ -265,7 +281,8 @@ EAW 幅計測は両者に対する明確な差別化点になる。比較のた�
 
 ## 9. 参照したソース
 
-- `gitlint-core/gitlint/git.py`(`GitContext`, `GitCommitMessage.from_full_message`, `git_commentchar`, `GitCommit` 系)
+- `gitlint-core/gitlint/git.py`(`GitContext`, `GitCommitMessage.from_full_message`,
+  `git_commentchar`, `GitCommit` 系)
 - `gitlint-core/gitlint/lint.py`(`GitLinter`, `_apply_line_rules`)
 - `gitlint-core/gitlint/rules.py`(T1〜T8, B1〜B8, M1, I1〜I4)
 - `gitlint-core/gitlint/contrib/rules/conventional_commit.py`(CT1)
