@@ -133,6 +133,7 @@ dependencies = [
  "glob",
  "rstest",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
  "unicode-width",

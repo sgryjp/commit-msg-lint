@@ -9,12 +9,15 @@ use serde::Deserialize;
 struct CaseManifest {
     args: Vec<String>,
     exit_code: u8,
+    #[serde(default)]
+    raw: bool,
 }
 
 #[derive(Debug)]
 struct FixtureCase {
     args: Vec<String>,
     exit_code: u8,
+    raw: bool,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     files: Vec<(PathBuf, PathBuf)>,
@@ -73,6 +76,7 @@ fn load_fixture(name: &str, directory: &Path) -> Result<FixtureCase, String> {
     Ok(FixtureCase {
         args: manifest.args,
         exit_code: manifest.exit_code,
+        raw: manifest.raw,
         stdout: read_expected("stdout.txt")?,
         stderr: read_expected("stderr.txt")?,
         files,
@@ -106,7 +110,7 @@ fn run_fixture_case(name: &str) {
     let home = working_directory.join("isolated-home");
     fs::create_dir(&home)
         .unwrap_or_else(|error| panic!("case {name}: cannot create isolated home: {error}"));
-    let output = execute_cli(name, &case.args, &working_directory, &home);
+    let output = execute_cli(name, &case.args, &working_directory, &home, case.raw);
 
     assert_eq!(
         output.status.code(),
@@ -123,7 +127,13 @@ fn git_ceiling_path(ceiling: &Path) -> Option<&Path> {
     (!ceiling.as_os_str().as_encoded_bytes().contains(&separator)).then_some(ceiling)
 }
 
-fn execute_cli(name: &str, args: &[String], working_directory: &Path, home: &Path) -> Output {
+fn execute_cli(
+    name: &str,
+    args: &[String],
+    working_directory: &Path,
+    home: &Path,
+    raw: bool,
+) -> Output {
     let stdin = File::open(working_directory.join("message.txt")).unwrap_or_else(|error| {
         panic!("case {name}: cannot open message.txt for standard input: {error}")
     });
@@ -143,8 +153,26 @@ fn execute_cli(name: &str, args: &[String], working_directory: &Path, home: &Pat
     if let Some(ceiling_path) = git_ceiling_path(ceiling) {
         command.env("GIT_CEILING_DIRECTORIES", ceiling_path);
     } else {
-        // Git cannot represent a ceiling path containing its path-list separator.
-        command.env("GIT_DIR", home.join("no-repository"));
+        // Git cannot represent this ceiling: an isolated repository stops discovery instead.
+        let mut init = Command::new("git");
+        init.env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("HOME", home)
+            .env("USERPROFILE", home)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", home.join("no-global-config"))
+            .current_dir(working_directory)
+            .args(["init", "-q"]);
+        #[cfg(windows)]
+        if let Some(system_root) = std::env::var_os("SystemRoot") {
+            init.env("SystemRoot", system_root);
+        }
+        assert!(init.status().expect("launch git init").success());
+    }
+    if raw {
+        command
+            .env("COMMIT_MSG_LINT_STRIP_COMMENTS", "0")
+            .env("COMMIT_MSG_LINT_CUT_SCISSORS", "0");
     }
     command
         .args(args)
@@ -233,7 +261,13 @@ mod runner_validation_tests {
         )
         .unwrap();
 
-        let output = execute_cli("large-help", &["--help".into()], &working_directory, &home);
+        let output = execute_cli(
+            "large-help",
+            &["--help".into()],
+            &working_directory,
+            &home,
+            false,
+        );
 
         assert_eq!(output.status.code(), Some(0));
         let help = std::str::from_utf8(&output.stdout).unwrap();
@@ -303,7 +337,13 @@ mod runner_validation_tests {
             ceiling.display()
         );
 
-        let output = execute_cli("ancestor-repository-config", &[], &working_directory, &home);
+        let output = execute_cli(
+            "ancestor-repository-config",
+            &[],
+            &working_directory,
+            &home,
+            false,
+        );
 
         assert_eq!(output.status.code(), Some(0));
         assert!(output.stdout.is_empty());

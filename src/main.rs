@@ -1,8 +1,10 @@
+mod cli_policy;
+
 use clap::Parser;
 use commit_msg_lint::{config, lint};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 #[derive(Parser)]
 #[command(
@@ -31,7 +33,7 @@ struct Arguments {
 }
 
 fn discover_config() -> Result<Option<PathBuf>, String> {
-    let output = Command::new("git")
+    let output = cli_policy::git_command()
         .args(["rev-parse", "--show-toplevel"])
         .env("LC_ALL", "C")
         .output()
@@ -55,6 +57,8 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
 
 fn run() -> Result<u8, String> {
     let args = Arguments::parse();
+    let policy = cli_policy::FilterPolicy::from_environment()?;
+    let prefix = policy.comment_prefix()?;
     let config_path = match args.config {
         Some(path) => Some(path),
         None => discover_config()?,
@@ -82,7 +86,13 @@ fn run() -> Result<u8, String> {
             ("<stdin>".to_string(), input)
         }
     };
-    let diagnostics = lint::lint(&input, &config);
+    let diagnostics = lint::lint_filtered(
+        &input,
+        &config,
+        &prefix,
+        policy.strip_comments,
+        policy.cut_scissors,
+    );
     let mut failed = false;
     for diagnostic in diagnostics {
         eprintln!(

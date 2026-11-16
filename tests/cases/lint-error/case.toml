@@ -1,2 +1,3 @@
 args = []
 exit_code = 1
+raw = true

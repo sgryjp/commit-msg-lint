@@ -8,8 +8,9 @@ Each case must contain:
 to standard input when the case uses `--edit`; the CLI must then read the
 message from the path named in `args`.
 - `case.toml` — strict case metadata with required `args` (an array of strings)
-and `exit_code` (an integer from 0 through 255). Unknown and missing fields
-are errors.
+and `exit_code` (an integer from 0 through 255). Optional `raw = true` disables
+both CLI filters to test the original input; the default is `false`, using the
+CLI defaults. Unknown and missing required fields are errors.
 - `stdout.txt` and `stderr.txt` — expected output bytes, including final
 newlines where applicable. Empty output is represented by an empty file.
 
@@ -28,8 +29,8 @@ Git remains available so the CLI's default repository-configuration discovery
 is exercised without inheriting a parent repository or user configuration. The
 runner caps discovery with `GIT_CEILING_DIRECTORIES`, passing the parent path
 without quoting. Git splits this list on `;` on Windows and `:` on Unix. If the
-parent path contains that separator, the runner uses an isolated nonexistent
-`GIT_DIR` so Git reports that no repository was found. It never forces
+parent path contains that separator, the runner initializes an isolated Git
+repository in the working directory to stop discovery there. It never forces
 `--config`.
 
 The tests compare exit status, stdout, and stderr byte-for-byte; they do not
