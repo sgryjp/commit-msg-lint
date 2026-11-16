@@ -37,7 +37,7 @@ struct Arguments {
     help_for_agents: bool,
     #[arg(
         long,
-        help = "Print the built-in default configuration as TOML and exit. Cannot be combined with other options."
+        help = "Print the built-in default configuration as JSON and exit. Cannot be combined with other options."
     )]
     print_default_config: bool,
 }
@@ -57,7 +57,7 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
     }
     let root = String::from_utf8(output.stdout)
         .map_err(|e| format!("Git repository path is not UTF-8: {e}"))?;
-    let path = Path::new(root.trim_end_matches(['\r', '\n'])).join("commit-msg-lint.toml");
+    let path = Path::new(root.trim_end_matches(['\r', '\n'])).join("commit-msg-lint.jsonc");
     match std::fs::symlink_metadata(&path) {
         Ok(_) => Ok(Some(path)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -83,7 +83,7 @@ fn run() -> Result<u8, String> {
 
     let args = Arguments::parse();
     if args.print_default_config {
-        let defaults = config::Config::default_toml()
+        let defaults = config::Config::default_json()
             .map_err(|error| format!("cannot serialize default configuration: {error}"))?;
         write_stdout(&defaults, "default configuration")?;
         return Ok(0);

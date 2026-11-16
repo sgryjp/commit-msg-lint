@@ -20,9 +20,9 @@
 </p>
 <h2><label for="message">Commit message</label></h2>
 <textarea id="message" rows="8">feat: add parser</textarea>
-<h2><label for="config">Configuration (TOML, optional)</label></h2>
+<h2><label for="config">Configuration (JSONC, optional)</label></h2>
 <p>Defaults are shown below. Leave this empty to use the default configuration.</p>
-<textarea id="config" rows="12" placeholder="version = 1" disabled></textarea>
+<textarea id="config" rows="12" placeholder='{"version": 1}' disabled></textarea>
 <p><button id="reset-config" type="button" disabled>Reset configuration to defaults</button></p>
 <h2>Diagnostics</h2>
 <ul id="result"></ul>

@@ -49,7 +49,7 @@
   1. フック(`--edit` に Git の作業ファイルを渡す)
   2. 通常ファイル(`--edit`)
   3. 標準入力
-  4. Web デモ(`web/src/lib.rs` の `lint_message(message, config_toml)`。ブラウザーに貼った文字列で、
+  4. Web デモ(`web/src/lib.rs` の `lint_message(message, config)`。ブラウザーに貼った文字列で、
      Git の設定も環境変数もない)
 
 ## 3. フックが受け取る入力と最終コミットの差

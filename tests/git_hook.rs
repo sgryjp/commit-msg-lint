@@ -77,7 +77,7 @@ fn isolated_command(program: impl AsRef<OsStr>, root: &Path, cwd: &Path) -> Comm
         .env("HOOK_AFTER", root.join("hook-after"))
         .env("HOOK_STATUS", root.join("hook-status"))
         .env("LINT_BIN", env!("CARGO_BIN_EXE_commit-msg-lint"))
-        .env("LINT_CONFIG", root.join("lint.toml"));
+        .env("LINT_CONFIG", root.join("lint.jsonc"));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -98,7 +98,7 @@ impl HookRepo {
         fs::create_dir(root.join("empty-template")).unwrap();
         fs::create_dir(root.join("hooks")).unwrap();
         fs::write(root.join("global-config"), "").unwrap();
-        fs::write(root.join("lint.toml"), "version = 1\n").unwrap();
+        fs::write(root.join("lint.jsonc"), r#"{ "version": 1 }"#).unwrap();
         script(
             &root.join("editor"),
             "#!/bin/sh\nset -e\nif [ \"${EDITOR_MODE:-}\" = prepend ]; then\n  printf 'feat: change\\n\\n' > \"$1.tmp\"\n  cat \"$1\" >> \"$1.tmp\"\n  mv \"$1.tmp\" \"$1\"\nelse\n  cp \"$TEST_MESSAGE\" \"$1\"\nfi\n",
@@ -287,8 +287,8 @@ fn message_and_file_input_can_retain_comments_that_the_hook_ignores() {
 fn verbatim_message_file_commit_inherits_filter_policy_through_the_existing_hook() {
     let repo = HookRepo::new();
     fs::write(
-        repo.root.join("lint.toml"),
-        "version = 1\n[rules.body-max-width]\nthresholds = [{limit = 20, severity = 'error'}]\n",
+        repo.root.join("lint.jsonc"),
+        r#"{ "version": 1, "rules": { "body-max-width": { "thresholds": [{ "limit": 20, "severity": "error" }] } } }"#,
     )
     .unwrap();
     let message = format!("feat: change\n\n#{}\n", "x".repeat(80));
@@ -414,7 +414,7 @@ fn only_an_exact_lf_terminated_scissors_line_cuts_the_input() {
     ];
     for (marker, recognized) in variants {
         let repo = HookRepo::new();
-        fs::write(repo.root.join("lint.toml"), "version = 1\n[rules.body-max-width]\nthresholds = [{limit = 20, severity = 'error'}]\n").unwrap();
+        fs::write(repo.root.join("lint.jsonc"), r#"{ "version": 1, "rules": { "body-max-width": { "thresholds": [{ "limit": 20, "severity": "error" }] } } }"#).unwrap();
         let message = format!("feat: change\n\n{marker}");
         repo.message(&message);
         let output = repo.git(
@@ -648,7 +648,7 @@ fn outside_a_repository_the_cli_uses_the_default_comment_prefix() {
         &repo.root,
         &repo.root,
     )
-    .args(["--config", repo.root.join("lint.toml").to_str().unwrap()])
+    .args(["--config", repo.root.join("lint.jsonc").to_str().unwrap()])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())

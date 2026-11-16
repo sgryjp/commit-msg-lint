@@ -1,71 +1,81 @@
 # Configuration reference
 
-`commit-msg-lint` uses a TOML file to override its built-in configuration. Unspecified settings
-retain their built-in defaults; a configuration file does not replace the entire profile.
+`commit-msg-lint` uses JSONC to override its built-in configuration. Unspecified settings retain
+their built-in defaults; a configuration file does not replace the entire profile. The CLI and Web
+demo use the same configuration format; an empty configuration in the Web demo uses the defaults.
 
 ## Generating a configuration file
 
 At the Git repository root, generate an editable configuration from the built-in defaults:
 
 ```sh
-commit-msg-lint --print-default-config > commit-msg-lint.toml
+commit-msg-lint --print-default-config > commit-msg-lint.jsonc
 ```
 
-Shell redirection overwrites an existing `commit-msg-lint.toml`. Customize the generated file as
-needed.
+Shell redirection overwrites an existing `commit-msg-lint.jsonc`. The output is editable,
+pretty-printed JSON without comments or trailing commas. Customize the generated file as needed.
 
 ## Finding a configuration file
 
 Use `--config <path>` to select a file explicitly. The path is relative to the current working
 directory unless it is absolute. An explicit path is used instead of automatic discovery and must
-refer to a readable UTF-8 file.
+refer to a readable UTF-8 file. Its contents are parsed as JSONC regardless of the file extension.
 
 Without `--config`, the CLI uses Git to find the root of the repository containing the current
-working directory and looks only for `commit-msg-lint.toml` at that root. Files in subdirectories
+working directory and looks only for `commit-msg-lint.jsonc` at that root. Files in subdirectories
 are not searched. If the file is absent or the current directory is outside a Git repository, the
 built-in defaults are used. Other discovery failures, including failure to run Git, are errors.
 
-Invalid TOML, an unreadable file, an unknown key or Rule ID, and invalid values or combinations
-are configuration errors. They do not fall back to defaults. Configuration errors exit with code
-`2`.
+JSONC accepts JSON with `//` line comments, `/* ... */` block comments, and trailing commas in
+objects and arrays. JSON5 extensions such as unquoted keys and single-quoted strings are not
+supported. Unknown or duplicate object keys, including Rule IDs, and explicit `null` values are
+rejected; omit optional fields to retain their defaults instead. Invalid JSONC, an unreadable file,
+and invalid values or combinations are configuration errors. They do not fall back to defaults.
+Configuration errors exit with code `2`.
 
 The [CLI's comment and scissors filtering controls](cli.md#message-filtering) are independent
-per-invocation environment variables, not settings in the shared TOML configuration. Explicit
-`--config` bypasses TOML discovery, not necessarily the separate Git lookup for the comment prefix.
+per-invocation environment variables, not settings in the shared JSONC configuration. Explicit
+`--config` bypasses configuration discovery, not necessarily the separate Git lookup for the
+comment prefix.
 
 ## Example
 
-```toml
-version = 1
-
-[conventional]
-types = ["feat", "fix", "docs", "refactor", "test"]
-scope-required = true
-allowed-scopes = ["cli", "parser", "docs"]
-
-[display-width]
-ambiguous-width = 2
-
-[rules.header-max-width]
-thresholds = [
-  { limit = 50, severity = "warning" },
-  { limit = 72, severity = "error" },
-]
-
-[rules.subject-full-stop]
-enabled = false
+```jsonc
+{
+  "version": 1,
+  "conventional": {
+    "types": ["feat", "fix", "docs", "refactor", "test"],
+    "scope-required": true,
+    "allowed-scopes": ["cli", "parser", "docs"],
+  },
+  "display-width": {
+    "ambiguous-width": 2,
+  },
+  "rules": {
+    // Warn at 51 columns and error at 73 columns.
+    "header-max-width": {
+      "thresholds": [
+        { "limit": 50, "severity": "warning" },
+        { "limit": 72, "severity": "error" },
+      ],
+    },
+    "subject-full-stop": {
+      "enabled": false,
+    },
+  },
+}
 ```
 
-The only required key is the top-level integer `version`, which must be `1`. All other tables and
+The only required key is the top-level integer `version`, which must be `1`. All other objects and
 keys are optional. The minimal configuration file is:
 
-```toml
-version = 1
+```json
+{ "version": 1 }
 ```
 
 ## Conventional Commit settings
 
-The optional `[conventional]` table contains:
+The optional `conventional` object contains:
 
 - `types`: An array of strings that replaces the default allowed Type list. The default is
   `["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test"]`.
@@ -75,7 +85,7 @@ The optional `[conventional]` table contains:
   `scope-required` Rule.
 - `allowed-scopes`: An array of strings. By default it is unspecified and Scopes are unrestricted.
   Setting it enables the `scope-enum` Rule, which compares Scopes exactly and case-sensitively.
-  An empty array permits no Scope. `scope-required = true` cannot be combined with an empty
+  An empty array permits no Scope. `"scope-required": true` cannot be combined with an empty
   `allowed-scopes` array, even if a Rule override disables either Rule.
 
 Rule-level `enabled` settings are applied after these settings, so they can override the Rule
@@ -84,7 +94,7 @@ states implied by `scope-required` and `allowed-scopes`. Enabling `scope-enum` e
 
 ## Display width settings
 
-The optional `[display-width]` table has one key:
+The optional `display-width` object has one key:
 
 - `ambiguous-width`: Either `1` (the default) or `2`. This selects the normal or CJK width
   calculation, respectively, for characters with ambiguous display width.
@@ -94,12 +104,15 @@ Width Rules measure Display Columns rather than bytes or characters. The impleme
 
 ## Rule settings
 
-Use a table named `[rules.<rule-id>]` to override a built-in Rule:
+Use an object named for the Rule ID inside `rules` to override a built-in Rule:
 
-```toml
-[rules.type-case]
-enabled = true
-severity = "warning"
+```jsonc
+{
+  "version": 1,
+  "rules": {
+    "type-case": { "enabled": true, "severity": "warning" },
+  },
+}
 ```
 
 - `enabled` is a boolean. A disabled Rule produces no diagnostics.
@@ -118,12 +131,18 @@ disabled Rule. Header component Rules (`type-enum`, `type-case`, `scope-required
 A width Rule's `thresholds` array replaces its default thresholds. Each entry must have an integer
 `limit` and a `severity`:
 
-```toml
-[rules.body-max-width]
-thresholds = [
-  { limit = 60, severity = "warning" },
-  { limit = 80, severity = "error" },
-]
+```jsonc
+{
+  "version": 1,
+  "rules": {
+    "body-max-width": {
+      "thresholds": [
+        { "limit": 60, "severity": "warning" },
+        { "limit": 80, "severity": "error" },
+      ],
+    },
+  },
+}
 ```
 
 Limits are non-negative and must be in strictly increasing order. The array must not be empty.
@@ -133,7 +152,7 @@ exceeded, the Rule reports one diagnostic using the severity of the highest exce
 
 `header-max-width` must use `thresholds` to change severity; it does not accept a Rule-level
 `severity`. `body-max-width` and `footer-max-width` also accept a Rule-level `severity`, which
-changes the severity of their default thresholds. A Rule table cannot specify both `severity` and
+changes the severity of their default thresholds. A Rule object cannot specify both `severity` and
 `thresholds`. Other Rules do not accept `thresholds`.
 
 ### Built-in Rules

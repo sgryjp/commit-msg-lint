@@ -573,14 +573,18 @@ mod tests {
                 .message
                 .contains("all lines were removed by filtering")
         );
-        let warning =
-            Config::parse("version = 1\n[rules.header-format]\nseverity = 'warning'").unwrap();
+        let warning = Config::parse(
+            r#"{ "version": 1, "rules": { "header-format": { "severity": "warning" } } }"#,
+        )
+        .unwrap();
         assert_eq!(
             lint_filtered("# comment\n", &warning, "#", true, true)[0].severity,
             Severity::Warning
         );
-        let disabled =
-            Config::parse("version = 1\n[rules.header-format]\nenabled = false").unwrap();
+        let disabled = Config::parse(
+            r#"{ "version": 1, "rules": { "header-format": { "enabled": false } } }"#,
+        )
+        .unwrap();
         assert!(lint_filtered("# comment\n", &disabled, "#", true, true).is_empty());
         let remaining_empty = lint_filtered("# comment\n\n", &config, "#", true, true);
         assert_eq!(remaining_empty[0].line, 2);
@@ -619,7 +623,7 @@ mod tests {
     #[test]
     fn all_header_rules_report_the_original_header_line() {
         let config = Config::parse(
-            "version = 1\n[conventional]\nscope-required = true\nallowed-scopes = ['cli']",
+            r#"{ "version": 1, "conventional": { "scope-required": true, "allowed-scopes": ["cli"] } }"#,
         )
         .unwrap();
         let cases = [
@@ -659,8 +663,10 @@ mod tests {
 
     #[test]
     fn body_footer_and_separator_diagnostics_retain_original_locations_and_order() {
-        let config =
-            Config::parse("version = 1\n[rules.subject-full-stop]\nseverity = 'warning'").unwrap();
+        let config = Config::parse(
+            r#"{ "version": 1, "rules": { "subject-full-stop": { "severity": "warning" } } }"#,
+        )
+        .unwrap();
         let input = format!(
             "# intro\nFeat: change.\n# before body\n{} \t\n# before footer\nRefs: {} \n",
             "x".repeat(73),
@@ -690,8 +696,8 @@ mod tests {
     #[test]
     fn filtered_width_uses_configured_unicode_columns_and_severity() {
         let config = Config::parse(
-            "version = 1\n[display-width]\nambiguous-width = 2\n\
-             [rules.header-max-width]\nthresholds = [{limit = 8, severity = 'warning'}]",
+            r#"{ "version": 1, "display-width": { "ambiguous-width": 2 },
+                 "rules": { "header-max-width": { "thresholds": [{ "limit": 8, "severity": "warning" }] } } }"#,
         )
         .unwrap();
         let diagnostics = lint_filtered("# ignored\nfeat: “”\n", &config, "#", true, true);
@@ -813,7 +819,7 @@ mod tests {
     #[test]
     fn scope_rules_match_unicode_and_allow_explicit_disabling() {
         let config = Config::parse(
-            "version = 1\n[conventional]\nscope-required = true\nallowed-scopes = ['日本語']",
+            r#"{ "version": 1, "conventional": { "scope-required": true, "allowed-scopes": ["日本語"] } }"#,
         )
         .unwrap();
         assert!(lint("feat(日本語): change", &config).is_empty());
@@ -825,8 +831,8 @@ mod tests {
     fn unicode_width_data_and_string_algorithm_are_pinned() {
         assert_eq!(unicode_width::UNICODE_VERSION, (17, 0, 0));
         let config = Config::parse(
-            "version = 1\n[display-width]\nambiguous-width = 2\n\
-             [rules.header-max-width]\nthresholds = [{limit = 8, severity = 'error'}]",
+            r#"{ "version": 1, "display-width": { "ambiguous-width": 2 },
+                 "rules": { "header-max-width": { "thresholds": [{ "limit": 8, "severity": "error" }] } } }"#,
         )
         .unwrap();
         assert_eq!(config.ambiguous_width, 2);

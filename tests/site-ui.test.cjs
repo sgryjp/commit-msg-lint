@@ -37,7 +37,7 @@ async function setup() {
   const init = () => new Promise((resolve) => {
     resolveInit = () => { initialized = true; resolve(); };
   });
-  const defaults = 'version = 1\n# generated defaults\n';
+  const defaults = '{\n  "version": 1\n}\n';
   const defaultConfig = () => {
     assert.ok(initialized, "defaults are retrieved only after WASM initialization");
     return defaults;
@@ -67,7 +67,7 @@ async function setup() {
 
 test("inputs have accessible labels and reset is a button", () => {
   assert.match(html, /<label for="message">Commit message<\/label>/);
-  assert.match(html, /<label for="config">Configuration \(TOML, optional\)<\/label>/);
+  assert.match(html, /<label for="config">Configuration \(JSONC, optional\)<\/label>/);
   assert.match(html, /<textarea id="config"[^>]* disabled><\/textarea>/);
   assert.match(html, /<button id="reset-config" type="button" disabled>Reset configuration to defaults<\/button>/);
 });
