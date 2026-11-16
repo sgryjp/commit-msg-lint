@@ -35,6 +35,11 @@ struct Arguments {
         help = "Print agent-oriented usage guidance and exit. Cannot be combined with other options."
     )]
     help_for_agents: bool,
+    #[arg(
+        long,
+        help = "Print the built-in default configuration as TOML and exit. Cannot be combined with other options."
+    )]
+    print_default_config: bool,
 }
 
 fn discover_config() -> Result<Option<PathBuf>, String> {
@@ -60,24 +65,31 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
     }
 }
 
+fn write_stdout(content: &str, description: &str) -> Result<(), String> {
+    let mut stdout = io::stdout().lock();
+    stdout
+        .write_all(content.as_bytes())
+        .and_then(|()| stdout.flush())
+        .map_err(|error| format!("cannot write {description} to standard output: {error}"))
+}
+
 fn run() -> Result<u8, String> {
     let raw_args: Vec<_> = std::env::args_os().skip(1).collect();
-    let help_for_agents = raw_args
-        .iter()
-        .any(|argument| argument == "--help-for-agents");
-    if help_for_agents && raw_args.len() != 1 {
-        return Err("--help-for-agents cannot be combined with other arguments".to_owned());
+    for option in ["--help-for-agents", "--print-default-config"] {
+        if raw_args.len() != 1 && raw_args.iter().any(|argument| argument == option) {
+            return Err(format!("{option} cannot be combined with other arguments"));
+        }
     }
 
     let args = Arguments::parse();
+    if args.print_default_config {
+        let defaults = config::Config::default_toml()
+            .map_err(|error| format!("cannot serialize default configuration: {error}"))?;
+        write_stdout(&defaults, "default configuration")?;
+        return Ok(0);
+    }
     if args.help_for_agents {
-        let mut stdout = io::stdout().lock();
-        stdout
-            .write_all(include_str!("../docs/agent-usage.md").as_bytes())
-            .map_err(|error| format!("cannot write agent usage to standard output: {error}"))?;
-        stdout
-            .flush()
-            .map_err(|error| format!("cannot write agent usage to standard output: {error}"))?;
+        write_stdout(include_str!("../docs/agent-usage.md"), "agent usage")?;
         return Ok(0);
     }
 

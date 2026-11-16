@@ -4,8 +4,8 @@
 commit-msg-lint [OPTIONS]
 ```
 
-The CLI checks one commit message against its configured Rules. It does not modify the message or
-install Git hooks.
+The CLI checks one commit message against its configured Rules, or prints information with a
+standalone option. It does not modify the message or install Git hooks.
 
 ## Options
 
@@ -14,15 +14,18 @@ install Git hooks.
 | `--edit <path>` | Read the message from a file instead of standard input. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
+| `--print-default-config` | Print built-in defaults as editable TOML to stdout and exit. |
 | `--help-for-agents` | Print [agent guidance](agent-usage.md) to stdout and exit successfully. |
 | `-h`, `--help` | Display command help and exit successfully. |
 | `-V`, `--version` | Print the program name and version to standard output and exit successfully. |
 
-Options can appear in any order and each may be used once. `--help-for-agents` must be used alone;
-combining it with any other argument, including `--help` or `--version`, is an argument error with
-exit code `2`. It prints the Markdown bundled at build time and does not read standard input, invoke
-Git, discover or load configuration, or read the filtering environment variables. Relative paths
-passed to `--edit` and `--config` are resolved from the current working directory.
+Options can appear in any order and each may be used once. `--help-for-agents` and
+`--print-default-config` must each be used alone; combining either with any other argument,
+including `--help` or `--version`, is an argument error with exit code `2`. Neither reads standard
+input, invokes Git, discovers or loads configuration, or reads the filtering environment variables.
+`--help-for-agents` prints the Markdown bundled at build time. `--print-default-config` prints the
+built-in defaults, not the current configuration. Relative paths passed to `--edit` and `--config`
+are resolved from the current working directory.
 
 ## Examples
 
@@ -51,8 +54,8 @@ its message before final cleanup. The same hook command works with the CLI's def
 
 ## Input
 
-Without `--edit`, the CLI reads standard input until EOF. With `--edit`, it reads the entire file
-and ignores standard input. Input must be valid UTF-8. Ordinary LF and CRLF line endings are treated
+For linting, without `--edit`, the CLI reads standard input until EOF. With `--edit`, it reads the
+entire file and ignores standard input. Input must be valid UTF-8. Ordinary LF and CRLF are treated
 alike; one final newline is excluded from the message content. Comment and scissors filtering runs
 before this normalization, as described below. With the built-in defaults, an empty message fails
 the `header-format` Rule. Special Headers such as Git-generated merge or revert messages have no
@@ -157,14 +160,14 @@ strict mode for agents. Lint diagnostics and command errors are written to stand
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | No errors, and no warnings in strict mode. Help and version also exit with `0`. |
+| `0` | No errors; warnings allowed unless strict. Help, version, and default config also succeed. |
 | `1` | At least one error diagnostic, or any warning with `--strict`. |
 | `2` | Argument, configuration, Git, file reading, or UTF-8 decoding error. |
 
 ## Configuration discovery
 
-`--config` selects a file explicitly and bypasses discovery. Otherwise, the CLI runs Git to find
-the root of the repository containing the current working directory and looks only for
+For linting, `--config` selects a file explicitly and bypasses discovery. Otherwise, the CLI runs
+Git to find the root of the repository containing the current working directory and looks only for
 `commit-msg-lint.toml` there. If there is no repository or no root configuration file, it uses the
 built-in defaults. Git must be runnable for discovery; other discovery failures, unreadable files,
 and invalid configuration are errors rather than reasons to use defaults. Configuration is loaded
