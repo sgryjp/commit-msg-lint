@@ -20,14 +20,27 @@ Refs #123
 ## Input and lines
 
 The CLI reads UTF-8 from standard input or the file specified by `--edit`. Invalid UTF-8 is an
-input error. For linting, every CRLF pair is converted to LF, and at most one final LF is removed.
-The remaining text is split on LF; the first line is always the Header, even for empty input. A
-standalone CR is not normalized and is checked as a forbidden control character. No other trimming,
-comment removal, Git cleanup, or Unicode normalization is performed, and the input file is not
-rewritten.
+input error. By default, the CLI first truncates at the first matching scissors line, then excludes
+comment lines. Each operation can be independently disabled. The exact matching conditions,
+environment controls, Git prefix resolution, and limitations are in the
+[CLI reference](cli.md#message-filtering). The public `lint(input, config)` library API and Web demo
+inspect the supplied input without filtering. No input file is rewritten.
+
+For linting, every CRLF pair in the remaining input is converted to LF, and at most one final LF is
+removed. A standalone CR is not normalized and is checked as a forbidden control character. Apart
+from comment and scissors filtering, the CLI performs no trimming, Git cleanup, or Unicode
+normalization. In particular, filtering does not add blank lines or remove surviving blank lines as
+whitespace cleanup.
 
 An **empty line** in the section rules has zero characters. A line containing spaces or other
-whitespace is not empty. Line numbers in diagnostics are one-based after CRLF normalization.
+whitespace is not empty. Header, Body, Footer, and separators are determined from the remaining
+logical lines. The first remaining line is the Header, even if it is empty. Diagnostics retain their
+one-based line numbers from the original input. For example, a comment between the Header and Body
+does not supply the required blank separator, and a missing separator is reported on the Body's
+original line. If all lines are excluded, the result is treated as an empty Header: when
+`header-format` is enabled, it reports on original line 1 that filtering left the message empty. If
+that Rule is disabled, it produces no such diagnostic. Ordinary empty input remains distinct from an
+input emptied by filtering.
 
 ## Header
 
@@ -68,10 +81,10 @@ ASCII space.
 
 ## Sections and separators
 
-After the Header, the linter finds the first nonempty line. If one exists, it must be line 3:
-exactly one empty line must separate it from the Header. Otherwise, `section-separator` is
-reported on that first nonempty line. If there is no nonempty line after the Header, no section
-separator is required or checked, even if multiple empty lines follow the Header.
+After the Header, the linter finds the first nonempty line. If one exists, it must be the third
+logical line: exactly one empty line must separate it from the Header. Otherwise,
+`section-separator` is reported on that first nonempty line. If there is no nonempty line after the
+Header, no section separator is required or checked, even if multiple empty lines follow the Header.
 
 The first nonempty line and everything after it are classified as Body or Footer using the
 heuristic below. If a Footer starts after the first nonempty line, the consecutive empty lines

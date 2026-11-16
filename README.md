@@ -28,13 +28,22 @@ commit-msg-lint --edit "$1"
 ```
 
 The CLI does not install or manage hooks. It checks a single message from a file or standard input;
-Git history inspection and custom Rules are not supported.
+Git history inspection and custom Rules are not supported. Not every Git commit path invokes the
+hook.
+
+By default, the CLI excludes Git comment lines and cuts the message at a scissors line before
+linting, for both standard input and `--edit`. This helps with editor and verbose commit messages,
+but can exclude content that Git retains, including comments in default `-m` / `-F` commits.
+The [CLI reference](docs/cli.md#message-filtering) explains the independent environment controls,
+the Git prefix lookup, and how to inspect a completed message as supplied. The public library and
+Web demo check the supplied message without this filtering.
 
 ## Web demo
 
 [Try the web demo](https://sgryjp.github.io/commit-msg-lint/) to check a commit message with an
 optional TOML configuration, without installing the CLI. The linter runs in your browser; the
-message and configuration are not sent to a server.
+message and configuration are not sent to a server. The demo checks the supplied message without
+Git comment removal or scissors truncation.
 
 ## Reference
 

@@ -18,6 +18,10 @@ Invalid TOML, an unreadable file, an unknown key or Rule ID, and invalid values 
 are configuration errors. They do not fall back to defaults. Configuration errors exit with code
 `2`.
 
+The [CLI's comment and scissors filtering controls](cli.md#message-filtering) are independent
+per-invocation environment variables, not settings in the shared TOML configuration. Explicit
+`--config` bypasses TOML discovery, not necessarily the separate Git lookup for the comment prefix.
+
 ## Example
 
 ```toml

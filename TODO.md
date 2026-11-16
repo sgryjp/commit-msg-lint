@@ -12,11 +12,9 @@ feature. Group them by area; prioritize individual items when they are triaged.
 
 - [ ] Evaluate the independent Header and Footer parsing rules against Conventional Commits and
   Git trailer behavior, and identify compatibility gaps worth addressing.
-- [ ] Implement the agreed
-  [message-filtering design](docs/design/commit-message-parsing-and-linting.md):
-  enable comment removal and scissors truncation by default in the CLI, with independent environment
-  controls and original input line numbers. The current implementation still checks lines that Git
-  may remove and can reject valid commits.
+- [ ] Verify the
+  [message-filtering implementation](docs/design/commit-message-parsing-and-linting.md) on Windows,
+  including actual Git for Windows hook and CRLF scissors behavior.
 - [ ] Evaluate an explicit comment-prefix override through an environment variable or CLI option,
   including stable agent-driven commits and filtering in environments without Git, such as WASM.
   Keep a built-in default prefix (`#`) available independently of Git configuration lookup.
