@@ -3,6 +3,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::{Duration, Instant};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -92,6 +94,99 @@ fn help_explains_how_each_option_affects_linting() {
             "Treat warnings as failures for the exit code without changing their severity."
         )
     );
+    assert!(help.contains("--help-for-agents"));
+    assert!(help.contains("Print agent-oriented usage guidance and exit."));
+}
+
+#[test]
+fn agent_help_prints_bundled_markdown_without_reading_stdin_git_config_or_policy() {
+    let dir = TestDir::new();
+    fs::create_dir(dir.0.join(".git")).unwrap();
+    fs::write(dir.0.join(".git/config"), "not valid Git configuration").unwrap();
+    fs::write(dir.0.join("commit-msg-lint.toml"), "not valid TOML").unwrap();
+
+    let output = dir.command_with_env(
+        &["--help-for-agents"],
+        b"input that must not be linted",
+        &[
+            ("PATH", ""),
+            ("GIT_DIR", "missing"),
+            ("GIT_CONFIG_COUNT", "invalid"),
+            ("GIT_CONFIG_GLOBAL", "missing-config"),
+            (STRIP, "invalid"),
+            (CUT, ""),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, include_bytes!("../docs/agent-usage.md"));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn agent_help_does_not_wait_for_standard_input_eof() {
+    let dir = TestDir::new();
+    let mut child = dir
+        .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
+        .arg("--help-for-agents")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            drop(stdin);
+            let _ = child.wait();
+            panic!("--help-for-agents waited for standard input EOF");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn agent_help_cannot_be_combined_with_other_arguments() {
+    let dir = TestDir::new();
+    for args in [
+        &["--help-for-agents", "--strict"][..],
+        &["--strict", "--help-for-agents"],
+        &["--help-for-agents", "--edit", "message"],
+        &["--help-for-agents", "--config", "config.toml"],
+        &["--help-for-agents", "--help"],
+        &["--help-for-agents", "-h"],
+        &["--help-for-agents", "--version"],
+        &["--help-for-agents", "-V"],
+    ] {
+        let output = dir.command(args, b"ignored");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        assert!(stderr(&output).contains("--help-for-agents cannot be combined"));
+    }
+}
+
+#[test]
+fn agent_usage_documents_completed_message_and_existing_hook_examples() {
+    let docs = include_str!("../docs/agent-usage.md");
+    assert!(docs.contains("COMMIT_MSG_LINT_STRIP_COMMENTS=false"));
+    assert!(docs.contains("COMMIT_MSG_LINT_CUT_SCISSORS=false"));
+    assert!(docs.contains("git -c commit.verbose=false commit --cleanup=verbatim -F message.txt"));
+    assert!(
+        docs.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .contains("unless the hook explicitly removes or replaces them")
+    );
+    assert!(docs.contains("warnings can still be printed to\nstandard error with exit code `0`"));
 }
 
 #[test]

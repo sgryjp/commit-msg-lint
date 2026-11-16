@@ -284,6 +284,35 @@ fn message_and_file_input_can_retain_comments_that_the_hook_ignores() {
 }
 
 #[test]
+fn verbatim_message_file_commit_inherits_filter_policy_through_the_existing_hook() {
+    let repo = HookRepo::new();
+    fs::write(
+        repo.root.join("lint.toml"),
+        "version = 1\n[rules.body-max-width]\nthresholds = [{limit = 20, severity = 'error'}]\n",
+    )
+    .unwrap();
+    let message = format!("feat: change\n\n#{}\n", "x".repeat(80));
+    repo.message(&message);
+    let message_file = repo.root.join("message");
+    let output = repo.git(
+        &[
+            "-c",
+            "commit.verbose=false",
+            "commit",
+            "--cleanup=verbatim",
+            "-F",
+            message_file.to_str().unwrap(),
+        ],
+        &[(STRIP, "false"), (CUT, "false")],
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(repo.hook_status(), 1, "{}", text(&output.stderr));
+    assert!(text(&output.stderr).contains("body-max-width"));
+    assert_eq!(repo.captured(), message.as_bytes());
+}
+
+#[test]
 fn cleanup_modes_and_policy_overrides_are_independent() {
     for cleanup in ["strip", "whitespace", "scissors", "verbatim"] {
         for strip in [true, false] {

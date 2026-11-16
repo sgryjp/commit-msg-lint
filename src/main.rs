@@ -2,7 +2,7 @@ mod cli_policy;
 
 use clap::Parser;
 use commit_msg_lint::{config, lint};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -30,6 +30,11 @@ struct Arguments {
         help = "Treat warnings as failures for the exit code without changing their severity."
     )]
     strict: bool,
+    #[arg(
+        long,
+        help = "Print agent-oriented usage guidance and exit. Cannot be combined with other options."
+    )]
+    help_for_agents: bool,
 }
 
 fn discover_config() -> Result<Option<PathBuf>, String> {
@@ -56,7 +61,26 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
 }
 
 fn run() -> Result<u8, String> {
+    let raw_args: Vec<_> = std::env::args_os().skip(1).collect();
+    let help_for_agents = raw_args
+        .iter()
+        .any(|argument| argument == "--help-for-agents");
+    if help_for_agents && raw_args.len() != 1 {
+        return Err("--help-for-agents cannot be combined with other arguments".to_owned());
+    }
+
     let args = Arguments::parse();
+    if args.help_for_agents {
+        let mut stdout = io::stdout().lock();
+        stdout
+            .write_all(include_str!("../docs/agent-usage.md").as_bytes())
+            .map_err(|error| format!("cannot write agent usage to standard output: {error}"))?;
+        stdout
+            .flush()
+            .map_err(|error| format!("cannot write agent usage to standard output: {error}"))?;
+        return Ok(0);
+    }
+
     let policy = cli_policy::FilterPolicy::from_environment()?;
     let prefix = policy.comment_prefix()?;
     let config_path = match args.config {

@@ -14,11 +14,15 @@ install Git hooks.
 | `--edit <path>` | Read the message from a file instead of standard input. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
+| `--help-for-agents` | Print [agent guidance](agent-usage.md) to stdout and exit successfully. |
 | `-h`, `--help` | Display command help and exit successfully. |
 | `-V`, `--version` | Print the program name and version to standard output and exit successfully. |
 
-Options can appear in any order and each may be used once. Relative paths passed to `--edit` and
-`--config` are resolved from the current working directory.
+Options can appear in any order and each may be used once. `--help-for-agents` must be used alone;
+combining it with any other argument, including `--help` or `--version`, is an argument error with
+exit code `2`. It prints the Markdown bundled at build time and does not read standard input, invoke
+Git, discover or load configuration, or read the filtering environment variables. Relative paths
+passed to `--edit` and `--config` are resolved from the current working directory.
 
 ## Examples
 
@@ -146,8 +150,10 @@ Diagnostics are sorted by line number and then Rule ID. For example,
 <stdin>:1: error[header-format] header does not match the Conventional Commit format
 ```
 
-A successful lint run with no diagnostics prints nothing. Warnings are still printed when they do
-not cause failure. Lint diagnostics and command errors are written to standard error.
+A successful lint run with no diagnostics prints nothing. Warnings are still printed to standard
+error when they do not cause failure, so exit code `0` does not mean there were no warnings.
+`--strict` promotes warnings to exit code `1` only when explicitly supplied; the CLI does not force
+strict mode for agents. Lint diagnostics and command errors are written to standard error.
 
 | Exit code | Meaning |
 | --- | --- |

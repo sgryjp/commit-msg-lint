@@ -29,7 +29,8 @@ commit-msg-lint --edit "$1"
 
 The CLI does not install or manage hooks. It checks a single message from a file or standard input;
 Git history inspection and custom Rules are not supported. Not every Git commit path invokes the
-hook.
+hook. For agent integrations, `commit-msg-lint --help` points to `--help-for-agents`, which prints
+[agent usage guidance](docs/agent-usage.md) without reading input or configuration.
 
 By default, the CLI excludes Git comment lines and cuts the message at a scissors line before
 linting, for both standard input and `--edit`. This helps with editor and verbose commit messages,
