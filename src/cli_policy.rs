@@ -212,6 +212,7 @@ fn brief_trace2_event(name: &str, message: &str, perf: bool) -> TraceLine {
     match name {
         "error" => TraceLine::Error(message.to_owned()),
         "def_param" if valid_brief_parameter(message, perf) => TraceLine::Info,
+        "data_json" => TraceLine::Info,
         "version" | "start" | "cmd_ancestry" | "cmd_name" | "exit" | "atexit" => {
             TraceLine::BriefInfo {
                 name: name.to_owned(),
@@ -475,6 +476,24 @@ mod tests {
         assert!(!is_outside_repository(
             "version unrelated failure\nfatal: not a git repository (or any of the parent directories): .git\n"
         ));
+    }
+
+    #[test]
+    fn brief_perf_data_json_events_do_not_hide_outside_repository_errors() {
+        let no_repo = "not a git repository (or any of the parent directories): .git";
+        let trace = format!(
+            "d0 | main | version | | | | | 2.56.0.windows.4\n\
+             d0 | main | start | | | | | git.exe rev-parse --git-dir\n\
+             d0 | main | data_json | r0 | 0.025744 | 0.025744 | process | windows/ancestry:[...]\n\
+             d0 | main | cmd_name | | | | | rev-parse (rev-parse)\n\
+             d0 | main | error | | | | | {no_repo}\n\
+             fatal: {no_repo}\n\
+             d0 | main | data_json | r0 | 0.026283 | 0.026283 | process | windows/memory:{{...}}\n\
+             d0 | main | exit | | 0.026305 | | | code:128\n\
+             d0 | main | atexit | | 0.026315 | | | code:128\n"
+        );
+
+        assert!(is_outside_repository(&trace), "{trace}");
     }
 
     #[test]
