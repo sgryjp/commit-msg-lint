@@ -96,6 +96,92 @@ fn help_explains_how_each_option_affects_linting() {
     );
     assert!(help.contains("--help-for-agents"));
     assert!(help.contains("Print agent-oriented usage guidance and exit."));
+    assert!(help.contains("--print-default-config"));
+    assert!(help.contains("Print the built-in default configuration as TOML and exit."));
+}
+
+#[test]
+fn print_default_config_ignores_existing_config_git_and_filter_environment() {
+    let dir = TestDir::new();
+    fs::write(dir.0.join("commit-msg-lint.toml"), "not valid TOML").unwrap();
+    let output = dir.command_with_env(
+        &["--print-default-config"],
+        b"input that must not be linted",
+        &[
+            ("PATH", ""),
+            ("GIT_DIR", "missing"),
+            ("GIT_CONFIG_COUNT", "invalid"),
+            (STRIP, "invalid"),
+            (CUT, ""),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let config = std::str::from_utf8(&output.stdout).unwrap();
+    assert_eq!(
+        config,
+        commit_msg_lint::config::Config::default_toml().unwrap()
+    );
+    assert_eq!(
+        commit_msg_lint::config::Config::parse(config).unwrap(),
+        commit_msg_lint::config::Config::default()
+    );
+}
+
+fn assert_does_not_wait_for_standard_input_eof(option: &str) {
+    let dir = TestDir::new();
+    let mut child = dir
+        .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
+        .arg(option)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            drop(stdin);
+            let _ = child.wait();
+            panic!("{option} waited for standard input EOF");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn print_default_config_does_not_wait_for_standard_input_eof() {
+    assert_does_not_wait_for_standard_input_eof("--print-default-config");
+}
+
+#[test]
+fn print_default_config_cannot_be_combined_with_other_arguments() {
+    let dir = TestDir::new();
+    for args in [
+        &["--print-default-config", "--strict"][..],
+        &["--strict", "--print-default-config"],
+        &["--print-default-config", "--edit", "message"],
+        &["--print-default-config", "--config", "config.toml"],
+        &["--print-default-config", "--help"],
+        &["--print-default-config", "-h"],
+        &["--print-default-config", "--version"],
+        &["--print-default-config", "-V"],
+        &["--print-default-config", "--print-default-config"],
+    ] {
+        let output = dir.command(args, b"ignored");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        assert!(stderr(&output).contains("--print-default-config cannot be combined"));
+    }
 }
 
 #[test]
@@ -125,33 +211,7 @@ fn agent_help_prints_bundled_markdown_without_reading_stdin_git_config_or_policy
 
 #[test]
 fn agent_help_does_not_wait_for_standard_input_eof() {
-    let dir = TestDir::new();
-    let mut child = dir
-        .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
-        .arg("--help-for-agents")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let stdin = child.stdin.take().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            break;
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            drop(stdin);
-            let _ = child.wait();
-            panic!("--help-for-agents waited for standard input EOF");
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    drop(stdin);
-    let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_does_not_wait_for_standard_input_eof("--help-for-agents");
 }
 
 #[test]
@@ -162,6 +222,8 @@ fn agent_help_cannot_be_combined_with_other_arguments() {
         &["--strict", "--help-for-agents"],
         &["--help-for-agents", "--edit", "message"],
         &["--help-for-agents", "--config", "config.toml"],
+        &["--help-for-agents", "--print-default-config"],
+        &["--print-default-config", "--help-for-agents"],
         &["--help-for-agents", "--help"],
         &["--help-for-agents", "-h"],
         &["--help-for-agents", "--version"],

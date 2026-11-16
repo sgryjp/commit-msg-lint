@@ -30,7 +30,7 @@ python -m pip install --user --upgrade prek
 Run all Rust tests:
 
 ```sh
-cargo test --locked
+cargo test --locked --workspace
 ```
 
 Run the fixture-discovery check:
@@ -63,6 +63,15 @@ python -m http.server 8000
 ```
 
 Open <http://localhost:8000/> in a browser. The generated `site/pkg/` directory is ignored by Git.
+
+Run the focused Web UI tests with Node.js (no additional packages are needed):
+
+```sh
+node --test tests/site-ui.test.cjs
+```
+
+These tests use a simulated DOM and WASM API; preview the built demo in a browser to check the
+actual integration.
 
 The [Pages workflow](.github/workflows/pages.yml) builds and deploys the demo on pushes to `main`
 and can also be run manually. The repository's GitHub Pages source must be set to GitHub Actions.

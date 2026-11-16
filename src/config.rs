@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub const RULES: &[&str] = &[
     "header-format",
@@ -21,7 +21,7 @@ pub const RULES: &[&str] = &[
     "control-character",
 ];
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Warning,
@@ -37,21 +37,21 @@ impl fmt::Display for Severity {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Threshold {
     pub limit: usize,
     pub severity: Severity,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rule {
     pub enabled: bool,
     pub severity: Severity,
     pub thresholds: Vec<Threshold>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Config {
     pub types: Vec<String>,
     pub allowed_scopes: Option<Vec<String>>,
@@ -108,7 +108,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     version: u64,
@@ -120,29 +120,70 @@ struct RawConfig {
     rules: BTreeMap<String, RawRule>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 struct Conventional {
+    #[serde(skip_serializing_if = "Option::is_none")]
     types: Option<Vec<String>>,
     scope_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     allowed_scopes: Option<Vec<String>>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 struct DisplayWidth {
+    #[serde(skip_serializing_if = "Option::is_none")]
     ambiguous_width: Option<usize>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
     enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     severity: Option<Severity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     thresholds: Option<Vec<Threshold>>,
 }
 
 impl Config {
+    /// Returns an editable TOML representation of the built-in defaults.
+    pub fn default_toml() -> Result<String, toml::ser::Error> {
+        let config = Self::default();
+        let rules = config
+            .rules
+            .iter()
+            // Scope rules are controlled by the conventional settings, so emitting their
+            // defaults as overrides would prevent edits to those settings from taking effect.
+            .filter(|(id, _)| !matches!(id.as_str(), "scope-required" | "scope-enum"))
+            .map(|(id, rule)| {
+                let has_thresholds = !rule.thresholds.is_empty();
+                (
+                    id.clone(),
+                    RawRule {
+                        enabled: Some(rule.enabled),
+                        severity: (!has_thresholds).then_some(rule.severity),
+                        thresholds: has_thresholds.then(|| rule.thresholds.clone()),
+                    },
+                )
+            })
+            .collect();
+        toml::to_string_pretty(&RawConfig {
+            version: 1,
+            conventional: Conventional {
+                types: Some(config.types),
+                scope_required: config.rules["scope-required"].enabled,
+                allowed_scopes: config.allowed_scopes,
+            },
+            display_width: DisplayWidth {
+                ambiguous_width: Some(config.ambiguous_width),
+            },
+            rules,
+        })
+    }
+
     pub fn parse(input: &str) -> Result<Self, String> {
         let raw: RawConfig = toml::from_str(input).map_err(|e| e.to_string())?;
         if raw.version != 1 {
@@ -217,6 +258,24 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_default_toml_round_trips_all_default_settings() {
+        let toml = Config::default_toml().unwrap();
+        assert_eq!(Config::parse(&toml).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn generated_default_toml_allows_scope_settings_to_enable_their_rules() {
+        let toml = Config::default_toml().unwrap().replace(
+            "scope-required = false",
+            "scope-required = true\nallowed-scopes = [\"cli\"]",
+        );
+        let config = Config::parse(&toml).unwrap();
+        assert!(config.rules["scope-required"].enabled);
+        assert!(config.rules["scope-enum"].enabled);
+        assert_eq!(config.allowed_scopes.unwrap(), ["cli"]);
+    }
 
     #[test]
     fn configuration_partially_overrides_profile() {

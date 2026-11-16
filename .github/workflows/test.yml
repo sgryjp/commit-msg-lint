@@ -31,8 +31,17 @@ jobs:
         with:
           python-version: "3.x"
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked
+      - run: cargo test --locked --workspace
       - run: python scripts/check_fixture_discovery.py
+
+  web-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/site-ui.test.cjs
 
   wasm:
     runs-on: ubuntu-latest

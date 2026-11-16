@@ -18,18 +18,20 @@
   <a href="https://github.com/sgryjp/commit-msg-lint#readme">README</a> ·
   <a href="https://github.com/sgryjp/commit-msg-lint/blob/main/docs/configuration.md">Configuration reference</a>
 </p>
-<h2>Commit message</h2>
+<h2><label for="message">Commit message</label></h2>
 <textarea id="message" rows="8">feat: add parser</textarea>
-<h2>Configuration (TOML, optional)</h2>
-<p>Leave this empty to use the default configuration.</p>
-<textarea id="config" rows="6" placeholder="version = 1"></textarea>
+<h2><label for="config">Configuration (TOML, optional)</label></h2>
+<p>Defaults are shown below. Leave this empty to use the default configuration.</p>
+<textarea id="config" rows="12" placeholder="version = 1" disabled></textarea>
+<p><button id="reset-config" type="button" disabled>Reset configuration to defaults</button></p>
 <h2>Diagnostics</h2>
 <ul id="result"></ul>
 <script type="module">
-import init, { lint } from "./pkg/commit_msg_lint_web.js";
+import init, { defaultConfig, lint } from "./pkg/commit_msg_lint_web.js";
 
 const message = document.getElementById("message");
 const config = document.getElementById("config");
+const resetConfig = document.getElementById("reset-config");
 const result = document.getElementById("result");
 
 function render() {
@@ -52,8 +54,16 @@ function render() {
 }
 
 await init();
+const defaults = defaultConfig();
+config.value = defaults;
+config.disabled = false;
 message.addEventListener("input", render);
 config.addEventListener("input", render);
+resetConfig.addEventListener("click", () => {
+  config.value = defaults;
+  render();
+});
+resetConfig.disabled = false;
 render();
 </script>
 </body>
