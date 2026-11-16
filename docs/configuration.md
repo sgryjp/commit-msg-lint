@@ -24,6 +24,9 @@ per-invocation environment variables, not settings in the shared TOML configurat
 
 ## Example
 
+This example overrides selected built-in defaults; it is not the default configuration.
+Unspecified settings retain their defaults.
+
 ```toml
 version = 1
 
