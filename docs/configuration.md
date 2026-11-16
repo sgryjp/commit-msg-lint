@@ -3,7 +3,7 @@
 `commit-msg-lint` uses a TOML file to override its built-in configuration. Unspecified settings
 retain their built-in defaults; a configuration file does not replace the entire profile.
 
-## Quick start
+## Generating a configuration file
 
 At the Git repository root, generate an editable configuration from the built-in defaults:
 
@@ -12,8 +12,7 @@ commit-msg-lint --print-default-config > commit-msg-lint.toml
 ```
 
 Shell redirection overwrites an existing `commit-msg-lint.toml`. Customize the generated file as
-needed. Explicit values freeze those settings even if built-in defaults change in a future version;
-remove settings to follow future defaults instead.
+needed.
 
 ## Finding a configuration file
 
