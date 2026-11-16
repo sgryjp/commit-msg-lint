@@ -14,7 +14,7 @@ standalone option. It does not modify the message or install Git hooks.
 | `--edit <path>` | Read the message from a file instead of standard input. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
-| `--print-default-config` | Print built-in defaults as editable TOML to stdout and exit. |
+| `--print-default-config` | Print built-in defaults as editable JSON to stdout and exit. |
 | `--help-for-agents` | Print [agent guidance](agent-usage.md) to stdout and exit successfully. |
 | `-h`, `--help` | Display command help and exit successfully. |
 | `-V`, `--version` | Print the program name and version to standard output and exit successfully. |
@@ -39,7 +39,7 @@ Read a message file, optionally with an explicit configuration or strict mode:
 
 ```sh
 commit-msg-lint --edit .git/COMMIT_EDITMSG
-commit-msg-lint --config config/lint.toml --strict --edit message.txt
+commit-msg-lint --config config/lint.jsonc --strict --edit message.txt
 ```
 
 For an existing Git `commit-msg` hook, pass the hook's first argument:
@@ -77,7 +77,7 @@ demo check the original input without this filtering. See the
 Each variable is independent: an unspecified variable stays enabled. Accepted true values are `1`,
 `true`, `yes`, and `on`; false values are `0`, `false`, `no`, and `off`. Letter case is ignored.
 Empty values, leading or trailing whitespace, other values, and non-Unicode values are
-configuration errors with exit code `2`. These controls are not TOML settings or CLI options.
+configuration errors with exit code `2`. These controls are not JSONC settings or CLI options.
 
 When either operation is enabled, the CLI uses Git in the current repository context to read
 `core.commentChar` and `core.commentString` in configuration order, using the last value. Git
@@ -168,9 +168,9 @@ strict mode for agents. Lint diagnostics and command errors are written to stand
 
 For linting, `--config` selects a file explicitly and bypasses discovery. Otherwise, the CLI runs
 Git to find the root of the repository containing the current working directory and looks only for
-`commit-msg-lint.toml` there. If there is no repository or no root configuration file, it uses the
-built-in defaults. Git must be runnable for discovery; other discovery failures, unreadable files,
-and invalid configuration are errors rather than reasons to use defaults. Configuration is loaded
-before the message is read.
+`commit-msg-lint.jsonc` there. If there is no repository or no root configuration file, it uses the
+built-in defaults. An explicit file is parsed as JSONC regardless of its extension. Git must be
+runnable for discovery; other discovery failures, unreadable files, and invalid configuration are
+errors rather than reasons to use defaults. Configuration is loaded before the message is read.
 
 See the [configuration reference](configuration.md) for the format, defaults, and Rule settings.

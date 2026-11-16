@@ -97,13 +97,13 @@ fn help_explains_how_each_option_affects_linting() {
     assert!(help.contains("--help-for-agents"));
     assert!(help.contains("Print agent-oriented usage guidance and exit."));
     assert!(help.contains("--print-default-config"));
-    assert!(help.contains("Print the built-in default configuration as TOML and exit."));
+    assert!(help.contains("Print the built-in default configuration as JSON and exit."));
 }
 
 #[test]
 fn print_default_config_ignores_existing_config_git_and_filter_environment() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("commit-msg-lint.toml"), "not valid TOML").unwrap();
+    fs::write(dir.0.join("commit-msg-lint.jsonc"), "not valid JSONC").unwrap();
     let output = dir.command_with_env(
         &["--print-default-config"],
         b"input that must not be linted",
@@ -118,9 +118,10 @@ fn print_default_config_ignores_existing_config_git_and_filter_environment() {
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     let config = std::str::from_utf8(&output.stdout).unwrap();
+    let _: serde_json::Value = serde_json::from_str(config).expect("defaults must be plain JSON");
     assert_eq!(
         config,
-        commit_msg_lint::config::Config::default_toml().unwrap()
+        commit_msg_lint::config::Config::default_json().unwrap()
     );
     assert_eq!(
         commit_msg_lint::config::Config::parse(config).unwrap(),
@@ -170,7 +171,7 @@ fn print_default_config_cannot_be_combined_with_other_arguments() {
         &["--print-default-config", "--strict"][..],
         &["--strict", "--print-default-config"],
         &["--print-default-config", "--edit", "message"],
-        &["--print-default-config", "--config", "config.toml"],
+        &["--print-default-config", "--config", "config.jsonc"],
         &["--print-default-config", "--help"],
         &["--print-default-config", "-h"],
         &["--print-default-config", "--version"],
@@ -189,7 +190,7 @@ fn agent_help_prints_bundled_markdown_without_reading_stdin_git_config_or_policy
     let dir = TestDir::new();
     fs::create_dir(dir.0.join(".git")).unwrap();
     fs::write(dir.0.join(".git/config"), "not valid Git configuration").unwrap();
-    fs::write(dir.0.join("commit-msg-lint.toml"), "not valid TOML").unwrap();
+    fs::write(dir.0.join("commit-msg-lint.jsonc"), "not valid JSONC").unwrap();
 
     let output = dir.command_with_env(
         &["--help-for-agents"],
@@ -221,7 +222,7 @@ fn agent_help_cannot_be_combined_with_other_arguments() {
         &["--help-for-agents", "--strict"][..],
         &["--strict", "--help-for-agents"],
         &["--help-for-agents", "--edit", "message"],
-        &["--help-for-agents", "--config", "config.toml"],
+        &["--help-for-agents", "--config", "config.jsonc"],
         &["--help-for-agents", "--print-default-config"],
         &["--print-default-config", "--help-for-agents"],
         &["--help-for-agents", "--help"],
@@ -277,9 +278,9 @@ fn standard_input_and_strict_exit_codes_match_severity() {
 fn long_options_accept_equals_syntax() {
     let dir = TestDir::new();
     fs::write(dir.0.join("message"), "feat: change\n").unwrap();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
 
-    let output = dir.command(&["--config=rules.toml", "--edit=message"], b"ignored");
+    let output = dir.command(&["--config=rules.jsonc", "--edit=message"], b"ignored");
 
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stdout.is_empty() && output.stderr.is_empty());
@@ -290,20 +291,23 @@ fn explicit_configuration_and_edit_path_are_used() {
     let dir = TestDir::new();
     fs::write(dir.0.join("message"), "feat(cli): change\n").unwrap();
     fs::write(
-        dir.0.join("rules.toml"),
-        "version = 1\n[conventional]\nallowed-scopes = []\n",
+        dir.0.join("rules.jsonc"),
+        r#"{ "version": 1, "conventional": { "allowed-scopes": [] } }"#,
     )
     .unwrap();
-    let output = dir.command(&["--config", "rules.toml", "--edit", "message"], b"ignored");
+    let output = dir.command(
+        &["--config", "rules.jsonc", "--edit", "message"],
+        b"ignored",
+    );
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("message:1: error[scope-enum]"));
     fs::write(
-        dir.0.join("rules.toml"),
-        "version = 1\n[conventional]\nallowed-scopes = []\n[rules.scope-enum]\nenabled = false\n",
+        dir.0.join("rules.jsonc"),
+        r#"{ "version": 1, "conventional": { "allowed-scopes": [] }, "rules": { "scope-enum": { "enabled": false } } }"#,
     )
     .unwrap();
     assert_eq!(
-        dir.command(&["--config", "rules.toml", "--edit", "message"], b"")
+        dir.command(&["--config", "rules.jsonc", "--edit", "message"], b"")
             .status
             .code(),
         Some(0)
@@ -315,12 +319,16 @@ fn repository_root_configuration_is_discovered_from_subdirectories() {
     let dir = TestDir::new();
     dir.git(&["init", "-q"]);
     fs::write(
-        dir.0.join("commit-msg-lint.toml"),
-        "version = 1\n[conventional]\ntypes = ['fix']\n",
+        dir.0.join("commit-msg-lint.jsonc"),
+        r#"{
+            // The root policy applies even in subdirectories.
+            "version": 1,
+            "conventional": { /* JSONC comments */ "types": ["fix",], },
+        }"#,
     )
     .unwrap();
     fs::create_dir(dir.0.join("child")).unwrap();
-    fs::write(dir.0.join("child/commit-msg-lint.toml"), "not valid toml").unwrap();
+    fs::write(dir.0.join("child/commit-msg-lint.jsonc"), "not valid JSONC").unwrap();
     let mut child = dir
         .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
         .current_dir(dir.0.join("child"))
@@ -340,16 +348,147 @@ fn repository_root_configuration_is_discovered_from_subdirectories() {
 }
 
 #[test]
+fn explicit_jsonc_is_used_regardless_of_extension_and_overrides_discovery() {
+    let dir = TestDir::new();
+    dir.git(&["init", "-q"]);
+    fs::write(
+        dir.0.join("commit-msg-lint.jsonc"),
+        "invalid discovered config",
+    )
+    .unwrap();
+    for name in ["policy.toml", "policy", "policy.jsonc"] {
+        fs::write(
+            dir.0.join(name),
+            r#"{
+                // Explicit paths contain JSONC, not TOML, regardless of extension.
+                "version": 1,
+                "conventional": { "types": ["fix",], }, /* comment */
+            }"#,
+        )
+        .unwrap();
+        let output = dir.command(&["--config", name], b"feat: change\n");
+        assert_eq!(output.status.code(), Some(1), "{name}: {}", stderr(&output));
+        assert!(stderr(&output).contains("error[type-enum]"), "{name}");
+        let output = dir.command(&["--config", name], b"fix: change\n");
+        assert_eq!(output.status.code(), Some(0), "{name}: {}", stderr(&output));
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn absent_auto_config_uses_defaults_and_legacy_toml_is_ignored() {
+    let dir = TestDir::new();
+    dir.git(&["init", "-q"]);
+    for legacy in [
+        None,
+        Some("version = 1\n[conventional]\ntypes = ['fix']\n"),
+        Some("invalid TOML"),
+    ] {
+        if let Some(content) = legacy {
+            fs::write(dir.0.join("commit-msg-lint.toml"), content).unwrap();
+        }
+        let output = dir.command(&[], b"feat: change\n");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{legacy:?}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn git_ceiling_prevents_discovery_of_an_ancestor_jsonc_config() {
+    let dir = TestDir::new();
+    let separator = if cfg!(windows) { b';' } else { b':' };
+    if dir.0.as_os_str().as_encoded_bytes().contains(&separator) {
+        return;
+    }
+    dir.git(&["init", "-q"]);
+    fs::write(
+        dir.0.join("commit-msg-lint.jsonc"),
+        r#"{ "version": 1, "conventional": { "types": ["fix"] } }"#,
+    )
+    .unwrap();
+    fs::create_dir(dir.0.join("child")).unwrap();
+
+    for (ceiling, expected) in [(dir.0.parent().unwrap(), 1), (dir.0.as_path(), 0)] {
+        let mut child = dir
+            .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
+            .current_dir(dir.0.join("child"))
+            .env("GIT_CEILING_DIRECTORIES", ceiling)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"feat: change\n")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(expected), "{}", stderr(&output));
+        if expected == 1 {
+            assert!(stderr(&output).contains("error[type-enum]"));
+        } else {
+            assert!(output.stderr.is_empty());
+        }
+    }
+}
+
+#[test]
+fn invalid_jsonc_configuration_is_a_cli_error() {
+    let dir = TestDir::new();
+    for (description, content) in [
+        (
+            "explicit null",
+            r#"{ "version": 1, "conventional": { "allowed-scopes": null } }"#,
+        ),
+        ("duplicate field", r#"{ "version": 1, "version": 1 }"#),
+        (
+            "duplicate rule",
+            r#"{ "version": 1, "rules": { "type-enum": {}, "type-enum": {} } }"#,
+        ),
+        (
+            "escaped duplicate rule",
+            r#"{ "version": 1, "rules": { "type-enum": {}, "type-\u0065num": {} } }"#,
+        ),
+        ("unquoted key", r#"{ version: 1 }"#),
+        (
+            "single-quoted string",
+            r#"{ "version": 1, "conventional": { "types": ['fix'] } }"#,
+        ),
+        ("unknown field", r#"{ "version": 1, "unknown": 1 }"#),
+        ("invalid syntax", r#"{ "version": 1, "rules": [ }"#),
+        ("TOML is not JSONC", "version = 1\n"),
+    ] {
+        fs::write(dir.0.join("invalid.jsonc"), content).unwrap();
+        let output = dir.command(&["--config", "invalid.jsonc"], b"feat: change\n");
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{description}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty(), "{description}");
+        assert!(!output.stderr.is_empty(), "{description}");
+    }
+}
+
+#[test]
 fn malformed_inputs_and_configuration_are_errors() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("bad.toml"), "version = 1\nunknown = 1\n").unwrap();
+    fs::write(dir.0.join("bad.jsonc"), r#"{ "version": 1, "unknown": 1 }"#).unwrap();
     fs::write(dir.0.join("bad-utf8"), [0xff]).unwrap();
     for (args, input) in [
         (vec!["--unknown"], &b"feat: change"[..]),
         (vec!["--edit"], &b""[..]),
         (vec!["--edit", "bad-utf8"], &b""[..]),
         (vec!["--edit", "missing"], &b""[..]),
-        (vec!["--config", "bad.toml"], &b"feat: change"[..]),
+        (vec!["--config", "bad.jsonc"], &b"feat: change"[..]),
         (vec!["--config", "missing"], &b"feat: change"[..]),
         (vec![], &[0xff][..]),
     ] {
@@ -508,12 +647,12 @@ fn git_config_environment_is_inherited_and_only_the_selected_prefix_is_decoded()
     let dir = TestDir::new();
     dir.git(&["init", "-q"]);
     dir.git(&["config", "core.commentChar", ";"]);
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let alternate = dir.0.join("alternate-git-config");
     let env = [("GIT_CONFIG", alternate.to_str().unwrap())];
     fs::write(&alternate, b"").unwrap();
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"# template\nfeat: change\n",
         &env,
     );
@@ -529,14 +668,14 @@ fn git_config_environment_is_inherited_and_only_the_selected_prefix_is_decoded()
     )
     .unwrap();
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"!! template\nfeat: change\n",
         &env,
     );
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     fs::write(&alternate, b"[unrelated]\n value = \xff\n").unwrap();
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"# template\nfeat: change\n",
         &env,
     );
@@ -551,7 +690,7 @@ fn git_config_environment_is_inherited_and_only_the_selected_prefix_is_decoded()
         contents.extend_from_slice(value);
         contents.push(b'\n');
         fs::write(&alternate, contents).unwrap();
-        let output = dir.command_with_env(&["--config", "rules.toml"], b"feat: change\n", &env);
+        let output = dir.command_with_env(&["--config", "rules.jsonc"], b"feat: change\n", &env);
         assert_eq!(
             output.status.code(),
             Some(2),
@@ -597,10 +736,10 @@ fn explicit_git_dir_is_inherited_instead_of_inferring_repository_from_edit_path(
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
     fs::write(dir.0.join("message"), "!! template\nfeat: change\n").unwrap();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let git_dir = repo.join(".git");
     let output = dir.command_with_env(
-        &["--config", "rules.toml", "--edit", "message"],
+        &["--config", "rules.jsonc", "--edit", "message"],
         b"",
         &[("GIT_DIR", git_dir.to_str().unwrap())],
     );
@@ -630,10 +769,10 @@ fn filtered_diagnostics_keep_source_lines_width_severity_order_and_strict_behavi
 fn bad_git_prefix_or_configuration_fails_with_guidance_and_can_be_bypassed() {
     let dir = TestDir::new();
     dir.git(&["init", "-q"]);
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     for value in ["auto", "AuTo", "", "multi\nline"] {
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"feat: change\n",
             &[
                 ("GIT_CONFIG_COUNT", "1"),
@@ -651,11 +790,11 @@ fn bad_git_prefix_or_configuration_fails_with_guidance_and_can_be_bypassed() {
         assert!(stderr(&output).contains(STRIP) && stderr(&output).contains(CUT));
     }
     fs::write(dir.0.join(".git/config"), "invalid git configuration\n").unwrap();
-    let output = dir.command(&["--config", "rules.toml"], b"feat: change\n");
+    let output = dir.command(&["--config", "rules.jsonc"], b"feat: change\n");
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("Git"));
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"feat: change\n",
         &[(STRIP, "off"), (CUT, "off")],
     );
@@ -665,13 +804,13 @@ fn bad_git_prefix_or_configuration_fails_with_guidance_and_can_be_bypassed() {
 #[test]
 fn missing_git_is_an_error_unless_both_filters_are_disabled_with_explicit_config() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let env = [("PATH", "")];
-    let output = dir.command_with_env(&["--config", "rules.toml"], b"feat: change\n", &env);
+    let output = dir.command_with_env(&["--config", "rules.jsonc"], b"feat: change\n", &env);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("Git"));
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"feat: change\n",
         &[("PATH", ""), (STRIP, "0"), (CUT, "0")],
     );
@@ -681,10 +820,10 @@ fn missing_git_is_an_error_unless_both_filters_are_disabled_with_explicit_config
 #[test]
 fn git_trace_does_not_change_default_prefix_resolution_inside_or_outside_a_repository() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     for bare in ["0", "1"] {
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"# template\nfeat: change\n",
             &[("GIT_TRACE", "1"), ("GIT_TRACE_BARE", bare)],
         );
@@ -698,7 +837,7 @@ fn git_trace_does_not_change_default_prefix_resolution_inside_or_outside_a_repos
     dir.git(&["init", "-q"]);
     for bare in ["0", "1"] {
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"# template\nfeat: change\n",
             &[("GIT_TRACE", "1"), ("GIT_TRACE_BARE", bare)],
         );
@@ -711,7 +850,7 @@ fn git_trace_does_not_change_default_prefix_resolution_inside_or_outside_a_repos
     }
     dir.git(&["config", "core.commentString", "!!"]);
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"!! template\nfeat: change\n",
         &[("GIT_TRACE", "1")],
     );
@@ -726,12 +865,12 @@ fn git_trace_does_not_change_default_prefix_resolution_inside_or_outside_a_repos
 #[test]
 fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     for key in ["GIT_TRACE2", "GIT_TRACE2_EVENT", "GIT_TRACE2_PERF"] {
         for brief in ["0", "1"] {
             let env = [(key, "1"), ("GIT_TRACE2_BRIEF", brief)];
             let output = dir.command_with_env(
-                &["--config", "rules.toml"],
+                &["--config", "rules.jsonc"],
                 b"# template\nfeat: change\n",
                 &env,
             );
@@ -748,7 +887,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
         for brief in ["0", "1"] {
             let env = [(key, "1"), ("GIT_TRACE2_BRIEF", brief)];
             let output = dir.command_with_env(
-                &["--config", "rules.toml"],
+                &["--config", "rules.jsonc"],
                 b"# template\nfeat: change\n",
                 &env,
             );
@@ -759,7 +898,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
                 stderr(&output)
             );
             let output = dir.command_with_env(
-                &["--config", "rules.toml"],
+                &["--config", "rules.jsonc"],
                 b"feat: change\n",
                 &[(key, "1"), ("GIT_CONFIG_COUNT", "invalid")],
             );
@@ -772,7 +911,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
         }
     }
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"# template\nfeat: change\n",
         &[("GIT_TRACE2_PERF", "1"), ("GIT_TRACE2_PERF_BRIEF", "1")],
     );
@@ -789,7 +928,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
         ("GIT_TRACE2_PERF", "1"),
     ];
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"# template\nfeat: change\n",
         &env,
     );
@@ -801,7 +940,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
     );
     dir.git(&["config", "core.commentString", "!!"]);
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"!! template\nfeat: change\n",
         &env,
     );
@@ -813,7 +952,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
     );
     let trace_file = dir.0.join("git-trace.json");
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"!! template\nfeat: change\n",
         &[("GIT_TRACE2_EVENT", trace_file.to_str().unwrap())],
     );
@@ -833,7 +972,7 @@ fn git_trace2_modes_preserve_prefix_resolution_and_real_errors() {
 #[test]
 fn git_trace2_brief_from_git_config_and_nonzero_numeric_values_are_supported() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let global = dir.0.join("global-git-config");
     fs::write(
         &global,
@@ -859,7 +998,7 @@ fn git_trace2_brief_from_git_config_and_nonzero_numeric_values_are_supported() {
         &[("GIT_TRACE2_PERF", "1"), ("GIT_TRACE2_PERF_BRIEF", "2")][..],
     ] {
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"# template\nfeat: change\n",
             env,
         );
@@ -877,7 +1016,7 @@ fn git_trace2_brief_from_git_config_and_nonzero_numeric_values_are_supported() {
         &[("GIT_TRACE2", "1"), ("GIT_TRACE2_BRIEF", "2")][..],
     ] {
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"# template\nfeat: change\n",
             env,
         );
@@ -896,9 +1035,9 @@ fn git_dir_path_with_newline_is_accepted_and_its_configuration_used() {
     let dir = TestDir::new();
     let git_dir = dir.0.join("git\ndir");
     dir.git(&["init", "--bare", "-q", git_dir.to_str().unwrap()]);
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"# template\nfeat: change\n",
         &[
             ("GIT_DIR", git_dir.to_str().unwrap()),
@@ -916,7 +1055,7 @@ fn git_dir_path_with_newline_is_accepted_and_its_configuration_used() {
         "!!",
     ]);
     let output = dir.command_with_env(
-        &["--config", "rules.toml"],
+        &["--config", "rules.jsonc"],
         b"!! template\nfeat: change\n",
         &[("GIT_DIR", git_dir.to_str().unwrap()), ("GIT_TRACE", "1")],
     );
@@ -928,7 +1067,7 @@ fn git_dir_path_with_newline_is_accepted_and_its_configuration_used() {
 fn filesystem_boundary_discovery_is_outside_a_repository_but_other_failures_are_errors() {
     use std::os::unix::fs::PermissionsExt;
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let git = dir.0.join("git");
     for (diagnostic, expected) in [
         (
@@ -948,7 +1087,7 @@ fn filesystem_boundary_discovery_is_outside_a_repository_but_other_failures_are_
         .unwrap();
         fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"# template\nfeat: change\n",
             &[("PATH", dir.0.to_str().unwrap())],
         );
@@ -965,8 +1104,8 @@ fn filesystem_boundary_discovery_is_outside_a_repository_but_other_failures_are_
 #[test]
 fn actual_filesystem_boundary_falls_back_when_available() {
     let dir = TestDir::new();
-    let config = dir.0.join("rules.toml");
-    fs::write(&config, "version = 1\n").unwrap();
+    let config = dir.0.join("rules.jsonc");
+    fs::write(&config, r#"{ "version": 1 }"#).unwrap();
     let global = dir.0.join("global-git-config");
     fs::write(
         &global,
@@ -1040,12 +1179,12 @@ fn actual_filesystem_boundary_falls_back_when_available() {
 #[test]
 fn invalid_explicit_git_directory_is_not_mistaken_for_a_directory_outside_a_repository() {
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     for env in [
         &[("GIT_DIR", "missing")][..],
         &[("GIT_DIR", "missing"), ("GIT_TRACE", "1")][..],
     ] {
-        let output = dir.command_with_env(&["--config", "rules.toml"], b"feat: change\n", env);
+        let output = dir.command_with_env(&["--config", "rules.jsonc"], b"feat: change\n", env);
         assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
         assert!(stderr(&output).contains("Git"));
     }
@@ -1073,7 +1212,7 @@ fn non_unicode_filter_environment_is_a_usage_error() {
 fn git_configuration_failures_do_not_expose_unrelated_output_or_trace_values() {
     use std::os::unix::fs::PermissionsExt;
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let git = dir.0.join("git");
     for script in [
         "if [ \"$1\" = rev-parse ]; then printf '.git\\n'; else printf 'unrelated.secret\\nprivate-value\\0'; echo 'secret trace private-value' >&2; exit 1; fi",
@@ -1083,7 +1222,7 @@ fn git_configuration_failures_do_not_expose_unrelated_output_or_trace_values() {
         fs::write(&git, format!("#!/bin/sh\n{script}\n")).unwrap();
         fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"feat: change\n",
             &[("PATH", dir.0.to_str().unwrap())],
         );
@@ -1103,7 +1242,7 @@ fn git_configuration_failures_do_not_expose_unrelated_output_or_trace_values() {
 fn malformed_git_output_and_git_failures_are_not_treated_as_unset_prefixes() {
     use std::os::unix::fs::PermissionsExt;
     let dir = TestDir::new();
-    fs::write(dir.0.join("rules.toml"), "version = 1\n").unwrap();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
     let git = dir.0.join("git");
     for script in [
         "if [ \"$1\" = rev-parse ]; then printf '.git\\n'; else printf 'core.commentchar\\n#'; fi",
@@ -1121,7 +1260,7 @@ fn malformed_git_output_and_git_failures_are_not_treated_as_unset_prefixes() {
         fs::write(&git, format!("#!/bin/sh\n{script}\n")).unwrap();
         fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
         let output = dir.command_with_env(
-            &["--config", "rules.toml"],
+            &["--config", "rules.jsonc"],
             b"feat: change\n",
             &[("PATH", dir.0.to_str().unwrap())],
         );

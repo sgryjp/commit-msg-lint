@@ -1,6 +1,6 @@
 # commit-msg-lint
 
-A Rust CLI that checks commit messages using Conventional Commit Rules and a TOML configuration.
+A Rust CLI that checks commit messages using Conventional Commit Rules and a JSONC configuration.
 
 ## Design philosophy
 
@@ -18,7 +18,7 @@ printf 'feat: add parser\n' | commit-msg-lint
 commit-msg-lint --edit .git/COMMIT_EDITMSG
 ```
 
-By default, the CLI reads `commit-msg-lint.toml` from the Git repository root, if present. Use
+By default, the CLI reads `commit-msg-lint.jsonc` from the Git repository root, if present. Use
 `--config <path>` to select another file. With `--strict`, warnings result in exit code 1.
 
 To use the CLI from an existing `commit-msg` Git hook, call:
@@ -42,7 +42,7 @@ Web demo check the supplied message without this filtering.
 ## Web demo
 
 [Try the web demo](https://sgryjp.github.io/commit-msg-lint/) to check a commit message with an
-optional TOML configuration, without installing the CLI. The linter runs in your browser; the
+optional JSONC configuration, without installing the CLI. The linter runs in your browser; the
 message and configuration are not sent to a server. The demo checks the supplied message without
 Git comment removal or scissors truncation.
 

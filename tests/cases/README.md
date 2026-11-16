@@ -17,7 +17,7 @@ newlines where applicable. Empty output is represented by an empty file.
 Example `case.toml`:
 
 ```toml
-args = ["--config", "config.toml", "--edit", "message.txt"]
+args = ["--config", "config.jsonc", "--edit", "message.txt"]
 exit_code = 0
 ```
 
@@ -35,7 +35,7 @@ repository in the working directory to stop discovery there. It never forces
 
 The tests compare exit status, stdout, and stderr byte-for-byte; they do not
 normalize line endings or whitespace. `.gitattributes` checks out fixture
-`.txt` and `.toml` files with LF line endings on every platform. To create a
+`.txt`, `.toml`, and `.jsonc` files with LF line endings on every platform. To create a
 fixture that intentionally contains actual CRLF bytes, add a more specific
 `-text` rule for each affected file in the repository `.gitattributes`, after
 the general fixture rules. For example:

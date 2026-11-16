@@ -308,8 +308,8 @@ mod runner_validation_tests {
         fs::create_dir(&repository).unwrap();
         initialize_git_repository(&repository);
         fs::write(
-            repository.join("commit-msg-lint.toml"),
-            "version = 1\n[conventional]\ntypes = ['fix']\n",
+            repository.join("commit-msg-lint.jsonc"),
+            r#"{"version":1,"conventional":{"types":["fix"]}}"#,
         )
         .unwrap();
 

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use jsonc_parser::{ParseOptions, parse_to_serde_value};
 use serde::{Deserialize, Serialize};
 
 pub const RULES: &[&str] = &[
@@ -20,6 +21,27 @@ pub const RULES: &[&str] = &[
     "line-trailing-whitespace",
     "control-character",
 ];
+
+const JSONC_OPTIONS: ParseOptions = ParseOptions {
+    allow_comments: true,
+    allow_loose_object_property_names: false,
+    allow_trailing_commas: true,
+    allow_missing_commas: false,
+    allow_single_quoted_strings: false,
+    allow_hexadecimal_numbers: false,
+    allow_unary_plus_numbers: false,
+    allow_bare_decimal_point_numbers: false,
+    allow_non_finite_numbers: false,
+    allow_extended_string_escapes: false,
+};
+
+fn deserialize_non_null_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -116,41 +138,65 @@ struct RawConfig {
     conventional: Conventional,
     #[serde(default, rename = "display-width")]
     display_width: DisplayWidth,
-    #[serde(default)]
+    #[serde(default, with = "serde_with::rust::maps_duplicate_key_is_error")]
     rules: BTreeMap<String, RawRule>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 struct Conventional {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     types: Option<Vec<String>>,
     scope_required: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     allowed_scopes: Option<Vec<String>>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 struct DisplayWidth {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     ambiguous_width: Option<usize>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawRule {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     severity: Option<Severity>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     thresholds: Option<Vec<Threshold>>,
 }
 
 impl Config {
-    /// Returns an editable TOML representation of the built-in defaults.
-    pub fn default_toml() -> Result<String, toml::ser::Error> {
+    /// Returns a plain JSON representation of the built-in defaults.
+    pub fn default_json() -> Result<String, serde_json::Error> {
         let config = Self::default();
         let rules = config
             .rules
@@ -170,7 +216,7 @@ impl Config {
                 )
             })
             .collect();
-        toml::to_string_pretty(&RawConfig {
+        serde_json::to_string_pretty(&RawConfig {
             version: 1,
             conventional: Conventional {
                 types: Some(config.types),
@@ -185,7 +231,8 @@ impl Config {
     }
 
     pub fn parse(input: &str) -> Result<Self, String> {
-        let raw: RawConfig = toml::from_str(input).map_err(|e| e.to_string())?;
+        let raw: RawConfig =
+            parse_to_serde_value(input, &JSONC_OPTIONS).map_err(|e| e.to_string())?;
         if raw.version != 1 {
             return Err("version must be 1".into());
         }
@@ -260,38 +307,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generated_default_toml_round_trips_all_default_settings() {
-        let toml = Config::default_toml().unwrap();
-        assert_eq!(Config::parse(&toml).unwrap(), Config::default());
+    fn repository_configuration_preserves_its_allowed_types() {
+        let config = Config::parse(include_str!("../commit-msg-lint.jsonc")).unwrap();
+        assert_eq!(config.types, ["chore", "docs", "feat", "test"]);
     }
 
     #[test]
-    fn generated_default_toml_allows_scope_settings_to_enable_their_rules() {
-        let toml = Config::default_toml().unwrap().replace(
-            "scope-required = false",
-            "scope-required = true\nallowed-scopes = [\"cli\"]",
+    fn generated_default_json_round_trips_all_default_settings() {
+        let json = Config::default_json().unwrap();
+        assert_eq!(Config::parse(&json).unwrap(), Config::default());
+        assert!(json.starts_with("{\n"));
+        assert!(!json.contains("//"));
+        assert!(!json.contains("/*"));
+        assert!(!json.contains(",\n  }"));
+        assert!(!json.contains(",\n}"));
+    }
+
+    #[test]
+    fn generated_defaults_leave_scope_rules_controlled_by_conventional_settings() {
+        let json = Config::default_json().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["rules"].get("scope-required").is_none());
+        assert!(value["rules"].get("scope-enum").is_none());
+        let json = json.replace(
+            "\"scope-required\": false",
+            "\"scope-required\": true,\n    \"allowed-scopes\": [\"cli\"]",
         );
-        let config = Config::parse(&toml).unwrap();
+        let config = Config::parse(&json).unwrap();
         assert!(config.rules["scope-required"].enabled);
         assert!(config.rules["scope-enum"].enabled);
-        assert_eq!(config.allowed_scopes.unwrap(), ["cli"]);
+        assert_eq!(config.allowed_scopes, Some(vec!["cli".to_owned()]));
     }
 
     #[test]
     fn configuration_partially_overrides_profile() {
         let config = Config::parse(
             r#"
-version = 1
-[conventional]
-types = ["feat"]
-scope-required = true
-allowed-scopes = ["cli"]
-[rules.scope-required]
-enabled = false
-[rules.subject-full-stop]
-severity = "warning"
-[rules.header-max-width]
-thresholds = [{limit = 10, severity = "warning"}, {limit = 20, severity = "error"}]
+{
+  "version": 1,
+  "conventional": {
+    "types": ["feat"],
+    "scope-required": true,
+    "allowed-scopes": ["cli"],
+  },
+  "rules": {
+    "scope-required": { "enabled": false },
+    "subject-full-stop": { "severity": "warning" },
+    "header-max-width": {
+      "thresholds": [
+        { "limit": 10, "severity": "warning" },
+        { "limit": 20, "severity": "error" },
+      ],
+    },
+  },
+}
+// JSONC allows comments and trailing commas, but no other JSON5 syntax.
 "#,
         )
         .unwrap();
@@ -307,29 +377,96 @@ thresholds = [{limit = 10, severity = "warning"}, {limit = 20, severity = "error
     }
 
     #[test]
-    fn rejects_invalid_keys_values_and_rule_relationships() {
+    fn accepts_both_comment_forms_and_comment_markers_inside_strings() {
+        let config = Config::parse(
+            r#"{
+              // line comment
+              "version": 1,
+              "conventional": { "types": ["feat//api", "fix/*api*/"] },
+              "rules": { "type-case": { "enabled": false } /* block comment */ },
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(config.types, ["feat//api", "fix/*api*/"]);
+        assert!(!config.rules["type-case"].enabled);
+    }
+
+    #[test]
+    fn omitted_optional_settings_preserve_their_defaults() {
+        let config = Config::parse(r#"{ "version": 1 }"#).unwrap();
+        let defaults = Config::default();
+        assert_eq!(config.types, defaults.types);
+        assert_eq!(config.allowed_scopes, defaults.allowed_scopes);
+        assert_eq!(config.ambiguous_width, defaults.ambiguous_width);
+        assert_eq!(config.rules["type-case"], defaults.rules["type-case"]);
+        assert_eq!(
+            config.rules["header-max-width"],
+            defaults.rules["header-max-width"]
+        );
+    }
+
+    #[test]
+    fn rejects_null_in_every_optional_configuration_field() {
+        for input in [
+            r#"{"version":1,"conventional":{"types":null}}"#,
+            r#"{"version":1,"conventional":{"allowed-scopes":null}}"#,
+            r#"{"version":1,"display-width":{"ambiguous-width":null}}"#,
+            r#"{"version":1,"rules":{"type-case":{"enabled":null}}}"#,
+            r#"{"version":1,"rules":{"type-case":{"severity":null}}}"#,
+            r#"{"version":1,"rules":{"header-max-width":{"thresholds":null}}}"#,
+            r#"{"version":1,"conventional":null}"#,
+            r#"{"version":1,"display-width":null}"#,
+            r#"{"version":1,"rules":null}"#,
+        ] {
+            assert!(Config::parse(input).is_err(), "accepted {input}");
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_keys_in_structs_and_dynamic_rule_maps() {
+        for input in [
+            r#"{"version":1,"version":1}"#,
+            r#"{"version":1,"ver\u0073ion":1}"#,
+            r#"{"version":1,"rules":{"type-case":{"enabled":true,"enabled":false}}}"#,
+            r#"{"version":1,"rules":{"type-case":{},"type-case":{}}}"#,
+            r#"{"version":1,"rules":{"type-case":{},"type-\u0063ase":{}}}"#,
+        ] {
+            assert!(Config::parse(input).is_err(), "accepted duplicate {input}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_jsonc_json5_extensions_unknown_keys_and_rule_relationships() {
         for input in [
             "",
-            "version = 2",
-            "version = 1\nunexpected = true",
-            "version = 1\n[rules.unknown]\nenabled = true",
-            "version = 1\n[rules.type-case]\nthresholds = []",
-            "version = 1\n[rules.type-case]\nseverity = 'fatal'",
-            "version = 1\n[display-width]\nambiguous-width = 3",
-            "version = 1\n[conventional]\ntypes = []",
-            "version = 1\n[conventional]\nscope-required = true\nallowed-scopes = []",
-            "version = 1\n[rules.scope-enum]\nenabled = true",
-            "version = 1\n[rules.header-max-width]\nthresholds = []",
-            "version = 1\n[rules.header-max-width]\nthresholds = [{limit=10, severity='error'}, {limit=10, severity='error'}]",
-            "version = 1\n[rules.header-max-width]\nthresholds = [{limit=10, severity='error'}, {limit=20, severity='warning'}]",
+            r#"{"version":2}"#,
+            r#"{"version":1,"unexpected":true}"#,
+            r#"{"version":1,"rules":{"unknown":{"enabled":true}}}"#,
+            r#"{"version":1,"rules":{"type-case":{"thresholds":[]}}}"#,
+            r#"{"version":1,"rules":{"type-case":{"severity":"fatal"}}}"#,
+            r#"{"version":1,"display-width":{"ambiguous-width":3}}"#,
+            r#"{"version":1,"conventional":{"types":[]}}"#,
+            r#"{"version":1,"conventional":{"scope-required":true,"allowed-scopes":[]}}"#,
+            r#"{"version":1,"rules":{"scope-enum":{"enabled":true}}}"#,
+            r#"{"version":1,"rules":{"header-max-width":{"thresholds":[]}}}"#,
+            r#"{"version":1,"rules":{"header-max-width":{"thresholds":[{"limit":10,"severity":"error"},{"limit":10,"severity":"error"}]}}}"#,
+            r#"{"version":1,"rules":{"header-max-width":{"thresholds":[{"limit":10,"severity":"error"},{"limit":20,"severity":"warning"}]}}}"#,
+            r#"{version:1}"#,
+            r#"{'version':1}"#,
+            r#"{"version":1,,}"#,
+            r#"{"version":1 "conventional":{}}"#,
+            r#"{"version":0x1}"#,
+            r#"{"version":+1}"#,
+            r#"{"version":.1}"#,
+            r#"{"version":1.}"#,
+            r#"{"version":Infinity}"#,
+            r#"{"version":1,"conventional":{"types":['fix']}}"#,
         ] {
             assert!(Config::parse(input).is_err(), "accepted {input:?}");
         }
-        assert!(
-            Config::parse(
-                "version = 1\n[conventional]\ntypes = []\n[rules.type-enum]\nenabled = false"
-            )
-            .is_ok()
-        );
+        assert!(Config::parse(
+            r#"{"version":1,"conventional":{"types":[]},"rules":{"type-enum":{"enabled":false}}}"#
+        )
+        .is_ok());
     }
 }
