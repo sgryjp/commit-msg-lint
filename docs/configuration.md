@@ -13,7 +13,38 @@ commit-msg-lint --print-default-config > commit-msg-lint.jsonc
 ```
 
 Shell redirection overwrites an existing `commit-msg-lint.jsonc`. The output is editable,
-pretty-printed JSON without comments or trailing commas. Customize the generated file as needed.
+pretty-printed JSON without comments or trailing commas. It includes `$schema` metadata pointing to
+the latest public schema. The Web demo's generated default configuration includes the same
+metadata. Customize the generated file as needed.
+
+## Editor schema and compatibility
+
+The optional `$schema` key associates a configuration with an editor schema. It must be a non-null
+string; the CLI and Web demo ignore it and do not fetch its URL. Existing configurations without it
+remain valid. The generated defaults point to:
+
+<https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json>
+
+This Draft-07 schema tracks `main`, not a particular CLI release, and may not match an installed
+CLI. To generate a schema matching the installed CLI instead, use the standalone command:
+
+```sh
+commit-msg-lint --print-config-schema > commit-msg-lint.schema.json
+```
+
+Shell redirection overwrites the destination. Associate the generated schema with the configuration
+in your editor to use it instead of the public schema. The CLI is pre-1.0.0 and its configuration
+schema may change. The required `"version": 1` identifies the current format; it does not promise a
+stable specification.
+
+The schema includes VS Code's `allowTrailingCommas: true` annotation to avoid trailing-comma
+warnings when editing JSONC. It is a VS Code extension, not a standard JSON Schema validation
+keyword; other tools may ignore it.
+Schema validators may require JSON rather than JSONC. Schema validation also cannot catch every
+configuration error, such as duplicate keys or threshold limits and severities that are not in
+the required order. The configuration parser remains authoritative for JSONC grammar and all
+configuration rules. Schema `default` annotations are informational and do not apply defaults;
+the parser applies the built-in defaults for omitted settings.
 
 ## Finding a configuration file
 
@@ -42,6 +73,7 @@ comment prefix.
 
 ```jsonc
 {
+  "$schema": "https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json",
   "version": 1,
   "conventional": {
     "types": ["feat", "fix", "docs", "refactor", "test"],

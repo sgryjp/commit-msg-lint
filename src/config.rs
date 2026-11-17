@@ -4,23 +4,8 @@ use std::fmt;
 use jsonc_parser::{ParseOptions, parse_to_serde_value};
 use serde::{Deserialize, Serialize};
 
-pub const RULES: &[&str] = &[
-    "header-format",
-    "type-enum",
-    "type-case",
-    "scope-required",
-    "scope-enum",
-    "subject-empty",
-    "header-trim",
-    "subject-full-stop",
-    "header-max-width",
-    "section-separator",
-    "body-max-width",
-    "footer-max-width",
-    "trailer-format",
-    "line-trailing-whitespace",
-    "control-character",
-];
+pub const CONFIG_SCHEMA_URL: &str =
+    "https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json";
 
 const JSONC_OPTIONS: ParseOptions = ParseOptions {
     allow_comments: true,
@@ -66,6 +51,84 @@ pub struct Threshold {
     pub severity: Severity,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RuleKind {
+    Standard,
+    Scope,
+    HeaderWidth,
+    LineWidth,
+}
+
+impl RuleKind {
+    pub(crate) fn supports_severity(self) -> bool {
+        match self {
+            Self::Standard | Self::Scope | Self::LineWidth => true,
+            Self::HeaderWidth => false,
+        }
+    }
+
+    pub(crate) fn supports_thresholds(self) -> bool {
+        match self {
+            Self::HeaderWidth | Self::LineWidth => true,
+            Self::Standard | Self::Scope => false,
+        }
+    }
+
+    fn default_thresholds(self) -> &'static [Threshold] {
+        match self {
+            Self::HeaderWidth => &[
+                Threshold {
+                    limit: 50,
+                    severity: Severity::Warning,
+                },
+                Threshold {
+                    limit: 72,
+                    severity: Severity::Error,
+                },
+            ],
+            Self::LineWidth => &[Threshold {
+                limit: 72,
+                severity: Severity::Error,
+            }],
+            Self::Standard | Self::Scope => &[],
+        }
+    }
+}
+
+pub(crate) struct RuleMetadata {
+    pub(crate) id: &'static str,
+    pub(crate) kind: RuleKind,
+    pub(crate) description: &'static str,
+}
+
+// Preserve the public Rule ID list without maintaining a second copy of the IDs.
+macro_rules! define_rules {
+    ($($id:literal => $kind:ident, $description:literal);+ $(;)?) => {
+        pub const RULES: &[&str] = &[$($id),+];
+        pub(crate) const RULE_METADATA: &[RuleMetadata] = &[
+            $(RuleMetadata { id: $id, kind: RuleKind::$kind, description: $description }),+
+        ];
+    };
+}
+
+define_rules! {
+    "header-format" => Standard, "Checks Header syntax: Type, optional Scope and !, and the colon-space separator.";
+    "type-enum" => Standard, "Checks that the Type is in the allowed types list, ignoring ASCII case.";
+    "type-case" => Standard, "Checks that the Type contains no uppercase ASCII letters.";
+    "scope-required" => Scope, "Checks that a Scope is present.";
+    "scope-enum" => Scope, "Checks that a present Scope matches an entry in allowed-scopes.";
+    "subject-empty" => Standard, "Checks that the Subject is not empty.";
+    "header-trim" => Standard, "Checks that the Header has no leading or trailing whitespace.";
+    "subject-full-stop" => Standard, "Checks that the Subject does not end in a period.";
+    "header-max-width" => HeaderWidth, "Checks Header width in Display Columns.";
+    "section-separator" => Standard, "Checks that exactly one empty line separates Header, Body, and Footer.";
+    "body-max-width" => LineWidth, "Checks the width of each Body line in Display Columns.";
+    "footer-max-width" => LineWidth, "Checks the width of each Footer line in Display Columns.";
+    "trailer-format" => Standard, "Checks that a Footer candidate starts with a valid Trailer.";
+    "line-trailing-whitespace" => Standard, "Checks that Body and Footer lines have no trailing whitespace.";
+    "control-character" => Standard, "Checks lines for forbidden control or bidirectional characters.";
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rule {
     pub enabled: bool,
@@ -83,34 +146,15 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let rules = RULES
+        let rules = RULE_METADATA
             .iter()
-            .map(|&id| {
-                let thresholds = match id {
-                    "header-max-width" => vec![
-                        Threshold {
-                            limit: 50,
-                            severity: Severity::Warning,
-                        },
-                        Threshold {
-                            limit: 72,
-                            severity: Severity::Error,
-                        },
-                    ],
-                    "body-max-width" | "footer-max-width" => {
-                        vec![Threshold {
-                            limit: 72,
-                            severity: Severity::Error,
-                        }]
-                    }
-                    _ => Vec::new(),
-                };
+            .map(|metadata| {
                 (
-                    id.to_string(),
+                    metadata.id.to_string(),
                     Rule {
-                        enabled: !matches!(id, "scope-required" | "scope-enum"),
+                        enabled: metadata.kind != RuleKind::Scope,
                         severity: Severity::Error,
-                        thresholds,
+                        thresholds: metadata.kind.default_thresholds().to_vec(),
                     },
                 )
             })
@@ -133,6 +177,13 @@ impl Default for Config {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
+    #[serde(
+        default,
+        rename = "$schema",
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    schema: Option<String>,
     version: u64,
     #[serde(default)]
     conventional: Conventional,
@@ -198,16 +249,16 @@ impl Config {
     /// Returns a plain JSON representation of the built-in defaults.
     pub fn default_json() -> Result<String, serde_json::Error> {
         let config = Self::default();
-        let rules = config
-            .rules
+        let rules = RULE_METADATA
             .iter()
             // Scope rules are controlled by the conventional settings, so emitting their
             // defaults as overrides would prevent edits to those settings from taking effect.
-            .filter(|(id, _)| !matches!(id.as_str(), "scope-required" | "scope-enum"))
-            .map(|(id, rule)| {
-                let has_thresholds = !rule.thresholds.is_empty();
+            .filter(|metadata| metadata.kind != RuleKind::Scope)
+            .map(|metadata| {
+                let rule = &config.rules[metadata.id];
+                let has_thresholds = metadata.kind.supports_thresholds();
                 (
-                    id.clone(),
+                    metadata.id.to_string(),
                     RawRule {
                         enabled: Some(rule.enabled),
                         severity: (!has_thresholds).then_some(rule.severity),
@@ -217,6 +268,7 @@ impl Config {
             })
             .collect();
         serde_json::to_string_pretty(&RawConfig {
+            schema: Some(CONFIG_SCHEMA_URL.to_owned()),
             version: 1,
             conventional: Conventional {
                 types: Some(config.types),
@@ -254,15 +306,16 @@ impl Config {
             config.ambiguous_width = width;
         }
         for (id, override_rule) in raw.rules {
-            let rule = config
-                .rules
-                .get_mut(&id)
+            let metadata = RULE_METADATA
+                .iter()
+                .find(|metadata| metadata.id == id)
                 .ok_or_else(|| format!("unknown rule: {id}"))?;
+            let rule = config.rules.get_mut(&id).unwrap();
             if let Some(enabled) = override_rule.enabled {
                 rule.enabled = enabled;
             }
             if let Some(severity) = override_rule.severity {
-                if id == "header-max-width" {
+                if !metadata.kind.supports_severity() {
                     return Err(format!("{id} uses thresholds, not severity"));
                 }
                 rule.severity = severity;
@@ -271,7 +324,7 @@ impl Config {
                 }
             }
             if let Some(thresholds) = override_rule.thresholds {
-                if rule.thresholds.is_empty() {
+                if !metadata.kind.supports_thresholds() {
                     return Err(format!("{id} does not support thresholds"));
                 }
                 if override_rule.severity.is_some() {
@@ -307,6 +360,113 @@ mod tests {
     use super::*;
 
     #[test]
+    fn each_rule_preserves_its_defaults_and_supported_settings() {
+        let cases = [
+            ("header-format", true, true, false),
+            ("type-enum", true, true, false),
+            ("type-case", true, true, false),
+            ("scope-required", false, true, false),
+            ("scope-enum", false, true, false),
+            ("subject-empty", true, true, false),
+            ("header-trim", true, true, false),
+            ("subject-full-stop", true, true, false),
+            ("header-max-width", true, false, true),
+            ("section-separator", true, true, false),
+            ("body-max-width", true, true, true),
+            ("footer-max-width", true, true, true),
+            ("trailer-format", true, true, false),
+            ("line-trailing-whitespace", true, true, false),
+            ("control-character", true, true, false),
+        ];
+        assert_eq!(RULES, cases.map(|(id, _, _, _)| id));
+        let defaults = Config::default();
+        assert_eq!(defaults.rules.len(), cases.len());
+        for (id, default_enabled, supports_severity, supports_thresholds) in cases {
+            let default = &defaults.rules[id];
+            assert_eq!(default.enabled, default_enabled, "{id}");
+            assert_eq!(default.severity, Severity::Error, "{id}");
+            let expected_thresholds = match id {
+                "header-max-width" => vec![
+                    Threshold {
+                        limit: 50,
+                        severity: Severity::Warning,
+                    },
+                    Threshold {
+                        limit: 72,
+                        severity: Severity::Error,
+                    },
+                ],
+                "body-max-width" | "footer-max-width" => vec![Threshold {
+                    limit: 72,
+                    severity: Severity::Error,
+                }],
+                _ => vec![],
+            };
+            assert_eq!(default.thresholds, expected_thresholds, "{id}");
+
+            let parse = |settings: &str| {
+                Config::parse(&format!(r#"{{"version":1,"rules":{{"{id}":{settings}}}}}"#))
+            };
+            let severity = parse(r#"{"enabled":false,"severity":"warning"}"#);
+            if supports_severity {
+                let rule = &severity.unwrap().rules[id];
+                assert!(!rule.enabled, "{id}");
+                assert_eq!(rule.severity, Severity::Warning, "{id}");
+                assert!(
+                    rule.thresholds
+                        .iter()
+                        .all(|t| t.severity == Severity::Warning),
+                    "{id}"
+                );
+            } else {
+                assert_eq!(
+                    severity.unwrap_err(),
+                    format!("{id} uses thresholds, not severity")
+                );
+            }
+
+            let thresholds =
+                parse(r#"{"enabled":false,"thresholds":[{"limit":10,"severity":"warning"}]}"#);
+            if supports_thresholds {
+                let rule = &thresholds.unwrap().rules[id];
+                assert!(!rule.enabled, "{id}");
+                assert_eq!(
+                    rule.thresholds,
+                    [Threshold {
+                        limit: 10,
+                        severity: Severity::Warning
+                    }],
+                    "{id}"
+                );
+                assert_eq!(
+                    parse(r#"{"thresholds":[]}"#).unwrap_err(),
+                    format!("{id} has invalid thresholds")
+                );
+            } else {
+                assert_eq!(
+                    thresholds.unwrap_err(),
+                    format!("{id} does not support thresholds")
+                );
+            }
+
+            let both =
+                parse(r#"{"severity":"warning","thresholds":[{"limit":10,"severity":"warning"}]}"#);
+            let expected_error = if !supports_severity {
+                format!("{id} uses thresholds, not severity")
+            } else if !supports_thresholds {
+                format!("{id} does not support thresholds")
+            } else {
+                format!("{id} cannot specify both severity and thresholds")
+            };
+            assert_eq!(both.unwrap_err(), expected_error);
+        }
+        assert_eq!(
+            Config::parse(r#"{"version":1,"rules":{"unknown":{}}}"#).unwrap_err(),
+            "unknown rule: unknown"
+        );
+    }
+
+    #[test]
     fn repository_configuration_preserves_its_allowed_types() {
         let config = Config::parse(include_str!("../commit-msg-lint.jsonc")).unwrap();
         assert_eq!(config.types, ["chore", "docs", "feat", "test"]);
@@ -317,7 +477,8 @@ mod tests {
         let json = Config::default_json().unwrap();
         assert_eq!(Config::parse(&json).unwrap(), Config::default());
         assert!(json.starts_with("{\n"));
-        assert!(!json.contains("//"));
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["$schema"], CONFIG_SCHEMA_URL);
         assert!(!json.contains("/*"));
         assert!(!json.contains(",\n  }"));
         assert!(!json.contains(",\n}"));
@@ -408,6 +569,7 @@ mod tests {
     #[test]
     fn rejects_null_in_every_optional_configuration_field() {
         for input in [
+            r#"{"version":1,"$schema":null}"#,
             r#"{"version":1,"conventional":{"types":null}}"#,
             r#"{"version":1,"conventional":{"allowed-scopes":null}}"#,
             r#"{"version":1,"display-width":{"ambiguous-width":null}}"#,

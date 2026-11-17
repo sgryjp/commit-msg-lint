@@ -33,6 +33,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --workspace
       - run: python scripts/check_fixture_discovery.py
+      - run: python -B -m unittest discover -s tests -p test_sync_config_schema.py
 
   web-ui:
     runs-on: ubuntu-latest

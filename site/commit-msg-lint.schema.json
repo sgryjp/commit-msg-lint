@@ -1,0 +1,562 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "conventional": {
+            "properties": {
+              "types": {
+                "maxItems": 0
+              }
+            },
+            "required": [
+              "types"
+            ]
+          }
+        },
+        "required": [
+          "conventional"
+        ]
+      },
+      "then": {
+        "properties": {
+          "rules": {
+            "properties": {
+              "type-enum": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            },
+            "required": [
+              "type-enum"
+            ]
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "conventional": {
+            "properties": {
+              "scope-required": {
+                "const": true
+              }
+            },
+            "required": [
+              "scope-required"
+            ]
+          }
+        },
+        "required": [
+          "conventional"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conventional": {
+            "properties": {
+              "allowed-scopes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rules": {
+            "properties": {
+              "scope-enum": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            },
+            "required": [
+              "scope-enum"
+            ]
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conventional": {
+            "required": [
+              "allowed-scopes"
+            ]
+          }
+        },
+        "required": [
+          "conventional"
+        ]
+      }
+    }
+  ],
+  "allowTrailingCommas": true,
+  "definitions": {
+    "threshold": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "A line violates this threshold when its width is greater than this limit.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "severity": {
+          "description": "Severity reported when this threshold is exceeded.",
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "limit",
+        "severity"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "JSONC configuration overrides built-in defaults. The parser also validates JSONC syntax, duplicate keys, and threshold ordering.",
+  "properties": {
+    "$schema": {
+      "description": "Optional editor schema association; ignored by the parser.",
+      "type": "string"
+    },
+    "conventional": {
+      "additionalProperties": false,
+      "description": "Conventional Commit settings.",
+      "properties": {
+        "allowed-scopes": {
+          "description": "Allowed Scopes, matched exactly and case-sensitively. Setting this enables scope-enum unless overridden; an empty array permits no Scope.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scope-required": {
+          "default": false,
+          "description": "Enables the scope-required Rule; Rule-level enabled overrides it. Cannot be true with empty allowed-scopes.",
+          "type": "boolean"
+        },
+        "types": {
+          "default": [
+            "build",
+            "chore",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "refactor",
+            "revert",
+            "style",
+            "test"
+          ],
+          "description": "Replaces the allowed Type list; matching is ASCII case-insensitive. Must be nonempty when type-enum is enabled.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "display-width": {
+      "additionalProperties": false,
+      "description": "Display width calculation settings.",
+      "properties": {
+        "ambiguous-width": {
+          "default": 1,
+          "description": "Use normal (1) or CJK (2) width for characters with ambiguous display width.",
+          "enum": [
+            1,
+            2
+          ],
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "rules": {
+      "additionalProperties": false,
+      "description": "Rule overrides are validated even when the Rule is disabled.",
+      "properties": {
+        "body-max-width": {
+          "additionalProperties": false,
+          "description": "Checks the width of each Body line in Display Columns.",
+          "not": {
+            "required": [
+              "severity",
+              "thresholds"
+            ]
+          },
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            },
+            "thresholds": {
+              "description": "Replaces default thresholds. Limits must increase strictly; severity must stay the same or increase from warning to error.",
+              "items": {
+                "$ref": "#/definitions/threshold"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "control-character": {
+          "additionalProperties": false,
+          "description": "Checks lines for forbidden control or bidirectional characters.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "footer-max-width": {
+          "additionalProperties": false,
+          "description": "Checks the width of each Footer line in Display Columns.",
+          "not": {
+            "required": [
+              "severity",
+              "thresholds"
+            ]
+          },
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            },
+            "thresholds": {
+              "description": "Replaces default thresholds. Limits must increase strictly; severity must stay the same or increase from warning to error.",
+              "items": {
+                "$ref": "#/definitions/threshold"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "header-format": {
+          "additionalProperties": false,
+          "description": "Checks Header syntax: Type, optional Scope and !, and the colon-space separator.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "header-max-width": {
+          "additionalProperties": false,
+          "description": "Checks Header width in Display Columns.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "thresholds": {
+              "description": "Replaces default thresholds. Limits must increase strictly; severity must stay the same or increase from warning to error.",
+              "items": {
+                "$ref": "#/definitions/threshold"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "header-trim": {
+          "additionalProperties": false,
+          "description": "Checks that the Header has no leading or trailing whitespace.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "line-trailing-whitespace": {
+          "additionalProperties": false,
+          "description": "Checks that Body and Footer lines have no trailing whitespace.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "scope-enum": {
+          "additionalProperties": false,
+          "description": "Checks that a present Scope matches an entry in allowed-scopes.",
+          "properties": {
+            "enabled": {
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "scope-required": {
+          "additionalProperties": false,
+          "description": "Checks that a Scope is present.",
+          "properties": {
+            "enabled": {
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "section-separator": {
+          "additionalProperties": false,
+          "description": "Checks that exactly one empty line separates Header, Body, and Footer.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "subject-empty": {
+          "additionalProperties": false,
+          "description": "Checks that the Subject is not empty.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "subject-full-stop": {
+          "additionalProperties": false,
+          "description": "Checks that the Subject does not end in a period.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "trailer-format": {
+          "additionalProperties": false,
+          "description": "Checks that a Footer candidate starts with a valid Trailer.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type-case": {
+          "additionalProperties": false,
+          "description": "Checks that the Type contains no uppercase ASCII letters.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type-enum": {
+          "additionalProperties": false,
+          "description": "Checks that the Type is in the allowed types list, ignoring ASCII case.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "A disabled Rule produces no diagnostics.",
+              "type": "boolean"
+            },
+            "severity": {
+              "default": "error",
+              "description": "Diagnostic severity. For body and footer width, changes the severity of default thresholds.",
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "version": {
+      "const": 1,
+      "description": "Required configuration format version. The pre-1.0 schema may change.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "title": "commit-msg-lint configuration",
+  "type": "object"
+}

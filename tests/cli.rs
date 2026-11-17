@@ -98,6 +98,8 @@ fn help_explains_how_each_option_affects_linting() {
     assert!(help.contains("Print agent-oriented usage guidance and exit."));
     assert!(help.contains("--print-default-config"));
     assert!(help.contains("Print the built-in default configuration as JSON and exit."));
+    assert!(help.contains("--print-config-schema"));
+    assert!(help.contains("Print the configuration JSON Schema and exit."));
 }
 
 #[test]
@@ -182,6 +184,68 @@ fn print_default_config_cannot_be_combined_with_other_arguments() {
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty(), "{args:?}");
         assert!(stderr(&output).contains("--print-default-config cannot be combined"));
+    }
+}
+
+#[test]
+fn print_config_schema_ignores_config_git_and_filter_environment() {
+    let dir = TestDir::new();
+    fs::write(dir.0.join("commit-msg-lint.jsonc"), "invalid").unwrap();
+    let output = dir.command_with_env(
+        &["--print-config-schema"],
+        b"input that must not be linted",
+        &[
+            ("PATH", ""),
+            ("GIT_DIR", "missing"),
+            ("GIT_CONFIG_COUNT", "invalid"),
+            (STRIP, "invalid"),
+            (CUT, ""),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        output.stdout,
+        commit_msg_lint::schema::config_schema_json()
+            .unwrap()
+            .as_bytes()
+    );
+    assert_eq!(
+        output.stdout,
+        dir.command(&["--print-config-schema"], b"").stdout
+    );
+}
+
+#[test]
+fn print_config_schema_does_not_wait_for_standard_input_eof() {
+    assert_does_not_wait_for_standard_input_eof("--print-config-schema");
+}
+
+#[test]
+fn print_config_schema_cannot_be_combined_with_other_arguments() {
+    let dir = TestDir::new();
+    for args in [
+        &["--print-config-schema", "--strict"][..],
+        &["--strict", "--print-config-schema"],
+        &["--print-config-schema", "--edit", "message"],
+        &["--print-config-schema", "--config", "config.jsonc"],
+        &["--print-config-schema", "--help"],
+        &["--print-config-schema", "-h"],
+        &["--print-config-schema", "--version"],
+        &["--print-config-schema", "-V"],
+        &["--print-config-schema", "--print-config-schema"],
+        &["--print-config-schema", "positional"],
+        &["--print-config-schema", "--print-default-config"],
+        &["--help-for-agents", "--print-config-schema"],
+    ] {
+        let output = dir.command(args, b"ignored");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        assert!(
+            stderr(&output).contains("cannot be combined"),
+            "{args:?}: {}",
+            stderr(&output)
+        );
     }
 }
 
