@@ -54,12 +54,14 @@ its message before final cleanup. The same hook command works with the CLI's def
 
 ## Input
 
-For linting, without `--edit`, the CLI reads standard input until EOF. With `--edit`, it reads the
-entire file and ignores standard input. Input must be valid UTF-8. Ordinary LF and CRLF are treated
-alike; one final newline is excluded from the message content. Comment and scissors filtering runs
-before this normalization, as described below. With the built-in defaults, an empty message fails
-the `header-format` Rule. Special Headers such as Git-generated merge or revert messages have no
-exemption from the configured Rules.
+For linting, without `--edit`, the CLI reads standard input until EOF.
+With `--edit`, it reads the entire file and ignores standard input.
+Input must be valid UTF-8; other encodings are not supported.
+The CLI does not convert messages based on Git's `i18n.commitEncoding` setting.
+After filtering, CRLF is normalized to LF for linting, and one final newline is excluded from the message content.
+Filtering runs before normalization: in particular, a scissors line ending in CRLF does not match, as described below.
+With the built-in defaults, an empty message fails the `header-format` Rule.
+Special Headers such as Git-generated merge or revert messages have no exemption from the configured Rules.
 
 ## Message filtering
 

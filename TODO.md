@@ -10,8 +10,6 @@ feature. Group them by area; prioritize individual items when they are triaged.
 
 ## Message compatibility
 
-- [ ] Evaluate the independent Header and Footer parsing rules against Conventional Commits and
-  Git trailer behavior, and identify compatibility gaps worth addressing.
 - [ ] Verify the
   [message-filtering implementation](docs/design/commit-message-parsing-and-linting.md) on Windows,
   including actual Git for Windows hook and CRLF scissors behavior.

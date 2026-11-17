@@ -1,7 +1,7 @@
 {
   "ambiguous_width": "wide",
   "line_wrapping": "split",
-  "max_width": 100,
+  "max_width": 120,
   "spacing": {
     "alphabets": "require",
     "digits": "require"
