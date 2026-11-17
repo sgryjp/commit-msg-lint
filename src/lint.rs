@@ -224,6 +224,45 @@ fn lint_lines(lines: &[Line<'_>], config: &Config) -> Vec<Diagnostic> {
     let header_line = header.number;
     let header = header.text();
 
+    let autosquash = ["fixup! ", "amend! ", "squash! "]
+        .iter()
+        .any(|prefix| header.starts_with(prefix));
+    let merge = [
+        "Merge branch ",
+        "Merge tag ",
+        "Merge remote-tracking branch ",
+        "Merge pull request ",
+        "Automatic merge",
+    ]
+    .iter()
+    .any(|prefix| header.starts_with(prefix))
+        || header
+            .strip_prefix("Merge ")
+            .is_some_and(|rest| rest.contains(" into "))
+        || header
+            .strip_prefix("Merged ")
+            .is_some_and(|rest| rest.contains(" in ") || rest.contains(" into "))
+        || header
+            .strip_prefix("Merged PR ")
+            .is_some_and(|rest| rest.contains(": "))
+        || header
+            .strip_prefix("Auto-merged ")
+            .is_some_and(|rest| rest.contains(" into "));
+    let revert = ["Revert ", "Reapply ", "revert ", "reapply "]
+        .iter()
+        .any(|prefix| header.starts_with(prefix));
+    if (config.ignore.autosquash && autosquash)
+        || (config.ignore.merge && merge)
+        || (config.ignore.revert && revert)
+        || config
+            .ignore
+            .header_patterns
+            .iter()
+            .any(|pattern| pattern.is_match(header))
+    {
+        return Vec::new();
+    }
+
     if header.trim() != header {
         linter.report(
             header_line,

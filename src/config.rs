@@ -136,11 +136,75 @@ pub struct Rule {
     pub thresholds: Vec<Threshold>,
 }
 
+/// A nonempty, validated regex-lite pattern for matching a Header.
+#[derive(Clone, Debug)]
+pub struct HeaderPattern(regex_lite::Regex);
+
+impl HeaderPattern {
+    pub fn new(pattern: &str) -> Result<Self, String> {
+        if pattern.is_empty() {
+            return Err("ignore header-patterns must not contain an empty pattern".into());
+        }
+        regex_lite::Regex::new(pattern)
+            .map(Self)
+            .map_err(|error| format!("invalid ignore header-pattern {pattern:?}: {error}"))
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub(crate) fn is_match(&self, header: &str) -> bool {
+        self.0.is_match(header)
+    }
+}
+
+impl PartialEq for HeaderPattern {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+impl Eq for HeaderPattern {}
+
+impl Serialize for HeaderPattern {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for HeaderPattern {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let pattern = String::deserialize(deserializer)?;
+        Self::new(&pattern).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct Ignore {
+    pub merge: bool,
+    pub revert: bool,
+    pub autosquash: bool,
+    pub header_patterns: Vec<HeaderPattern>,
+}
+
+impl Default for Ignore {
+    fn default() -> Self {
+        Self {
+            merge: true,
+            revert: true,
+            autosquash: true,
+            header_patterns: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Config {
     pub types: Vec<String>,
     pub allowed_scopes: Option<Vec<String>>,
     pub ambiguous_width: usize,
+    pub ignore: Ignore,
     pub rules: BTreeMap<String, Rule>,
 }
 
@@ -169,6 +233,7 @@ impl Default for Config {
             .collect(),
             allowed_scopes: None,
             ambiguous_width: 1,
+            ignore: Ignore::default(),
             rules,
         }
     }
@@ -189,6 +254,8 @@ struct RawConfig {
     conventional: Conventional,
     #[serde(default, rename = "display-width")]
     display_width: DisplayWidth,
+    #[serde(default)]
+    ignore: Ignore,
     #[serde(default, with = "serde_with::rust::maps_duplicate_key_is_error")]
     rules: BTreeMap<String, RawRule>,
 }
@@ -278,6 +345,7 @@ impl Config {
             display_width: DisplayWidth {
                 ambiguous_width: Some(config.ambiguous_width),
             },
+            ignore: config.ignore,
             rules,
         })
     }
@@ -290,6 +358,7 @@ impl Config {
         }
 
         let mut config = Self::default();
+        config.ignore = raw.ignore;
         if let Some(types) = raw.conventional.types {
             config.types = types;
         }

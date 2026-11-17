@@ -39,6 +39,11 @@ The [CLI reference](docs/cli.md#message-filtering) explains the independent envi
 the Git prefix lookup, and how to inspect a completed message as supplied. The public library and
 Web demo check the supplied message without this filtering.
 
+By default, recognized Git-generated and hosting-service Header forms are silently ignored in
+entirety, including width and severity checks. Matching is text-based, so it can also exclude
+manually written messages. Configure or disable these patterns as described in
+[ignored messages](docs/configuration.md#ignored-messages).
+
 ## Web demo
 
 [Try the web demo](https://sgryjp.github.io/commit-msg-lint/) to check a commit message with an

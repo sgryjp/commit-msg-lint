@@ -64,7 +64,11 @@ The CLI does not convert messages based on Git's `i18n.commitEncoding` setting.
 After filtering, CRLF is normalized to LF for linting, and one final newline is excluded from the message content.
 Filtering runs before normalization: in particular, a scissors line ending in CRLF does not match, as described below.
 With the built-in defaults, an empty message fails the `header-format` Rule.
-Special Headers such as Git-generated merge or revert messages have no exemption from the configured Rules.
+By default, recognized Git-generated and hosting-service Header forms silently bypass all Rules.
+See [ignored messages](configuration.md#ignored-messages) for matching boundaries, configuration,
+and the consequences for width and severity checks. A matching Header does not prove provenance.
+Some Git operations, including revert and cherry-pick without editing, may not invoke `commit-msg`;
+inspect the resulting message separately if it must be checked.
 
 ## Message filtering
 

@@ -201,6 +201,37 @@
       },
       "type": "object"
     },
+    "ignore": {
+      "additionalProperties": false,
+      "description": "Ignore entire messages whose Header matches a built-in group or a custom regex-lite pattern. Regex syntax is validated by the parser.",
+      "properties": {
+        "autosquash": {
+          "default": true,
+          "description": "Ignore recognized fixup, amend, and squash Headers.",
+          "type": "boolean"
+        },
+        "header-patterns": {
+          "default": [],
+          "description": "Additional nonempty regex-lite patterns searched within the first Header.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "merge": {
+          "default": true,
+          "description": "Ignore recognized merge Headers.",
+          "type": "boolean"
+        },
+        "revert": {
+          "default": true,
+          "description": "Ignore recognized revert and reapply Headers.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "rules": {
       "additionalProperties": false,
       "description": "Rule overrides are validated even when the Rule is disabled.",

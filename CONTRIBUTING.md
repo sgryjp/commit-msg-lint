@@ -93,8 +93,15 @@ Run the focused Web UI tests with Node.js (no additional packages are needed):
 node --test tests/site-ui.test.cjs
 ```
 
-These tests use a simulated DOM and WASM API; preview the built demo in a browser to check the
-actual integration.
+These tests use a simulated DOM and WASM API. To also exercise the built WebAssembly module with
+that simulated DOM, run:
+
+```sh
+wasm-pack build web --target web --dev --out-dir /tmp/commit-msg-lint-web-pkg
+WASM_PKG_DIR=/tmp/commit-msg-lint-web-pkg node --test web/tests/site-wasm.test.cjs
+```
+
+Preview the built demo in a browser to check the actual browser integration.
 
 The [Pages workflow](.github/workflows/pages.yml) builds and deploys the demo on pushes to `main`
 and can also be run manually. The repository's GitHub Pages source must be set to GitHub Actions.

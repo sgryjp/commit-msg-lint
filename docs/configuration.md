@@ -105,6 +105,55 @@ keys are optional. The minimal configuration file is:
 { "version": 1 }
 ```
 
+## Ignored messages
+
+The optional `ignore` object controls which messages bypass **all** Lint Rules. By default,
+`merge`, `revert`, and `autosquash` are each `true`, and `header-patterns` is an empty array.
+Each group can be disabled independently. Custom patterns are additive, even when every built-in
+pattern is disabled:
+
+```jsonc
+{
+  "version": 1,
+  "ignore": {
+    "merge": false,
+    "revert": false,
+    "autosquash": false,
+    "header-patterns": ["^Release: ", "社内専用"],
+  },
+}
+```
+
+Built-in patterns are case-sensitive, use literal ASCII spaces, and match the beginning of the
+first Header. They do not require the rest of the Header to end at the pattern boundary. In the
+following list, `.*` means zero or more characters:
+
+- `autosquash`: `^fixup! `, `^amend! `, `^squash! `.
+- `merge`: `^Merge branch `, `^Merge tag `, `^Merge remote-tracking branch `,
+  `^Merge pull request `, `^Merge .* into .*`, `^Merged .* (in|into) .*`, `^Merged PR .*: .*`,
+  `^Automatic merge`, and `^Auto-merged .* into .*`.
+- `revert`: `^(Revert|Reapply|revert|reapply) `.
+
+An autosquash target can be empty, non-Conventional, or contain another prefix. The separating
+space is required: `fixup!invalid` is not ignored. `revert: ...` is a Conventional Header, not a
+built-in revert match. A merge-like Body line alone does not cause an ignore.
+
+`header-patterns` is an array of nonempty strings using `regex-lite` syntax. Each pattern searches
+only the first Header and may match a substring; use `^` and `$` to anchor it. Unicode literals are
+supported, but Unicode character classes are not: `\w`, `\s`, and `\d` use ASCII definitions.
+Look-around and backreferences are unsupported. Empty or invalid patterns are configuration
+errors, even if another ignore matches; a valid pattern such as `.*` may match every Header.
+The editor schema cannot validate all regex syntax; configuration parsing remains authoritative.
+
+Matching is based on text, not provenance: manually written messages can match, and Git or hosting
+service messages may not. In particular, GitLab custom merge templates cannot all be recognized from
+text alone; configure a pattern if needed. No autosquash target or `amend!` replacement message is
+validated. A match silently excludes the entire message, including Body, Footer, width, and control
+characters: no warnings or errors are produced, even with `--strict`. This trades universal width
+and severity enforcement for usable generated-message workflows. Nonmatching messages retain all
+configured Rules and severities. The CLI applies this policy after its usual filtering; the library
+and Web demo apply it to their unfiltered input.
+
 ## Conventional Commit settings
 
 The optional `conventional` object contains:

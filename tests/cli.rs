@@ -317,6 +317,306 @@ fn agent_usage_documents_completed_message_and_existing_hook_examples() {
 }
 
 #[test]
+fn ignored_autosquash_stdin_skips_all_rules_even_in_strict_mode() {
+    let dir = TestDir::new();
+    let message = format!("fixup! {}\ninvalid body \u{1}\n", "界".repeat(80));
+    for args in [&[][..], &["--strict"][..]] {
+        let output = dir.command(args, message.as_bytes());
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn ignored_headers_are_silent_for_stdin_and_edit_even_with_invalid_content() {
+    let dir = TestDir::new();
+    for header in [
+        "fixup! ",
+        "amend! invalid",
+        "squash! fixup! invalid",
+        "Merge branch topic",
+        "Merge tag v1",
+        "Merge remote-tracking branch origin/topic",
+        "Merge pull request #1",
+        "Merge topic into main",
+        "Merged topic in main",
+        "Merged topic into main",
+        "Merged PR 1: topic",
+        "Automatic merge",
+        "Auto-merged topic into main",
+        "Revert invalid",
+        "Reapply invalid",
+        "revert invalid",
+        "reapply invalid",
+    ] {
+        let message = format!(
+            "{header}{}\ninvalid body \u{1}\n\nRefs:#1\n",
+            "界".repeat(80)
+        );
+        fs::write(dir.0.join("message"), &message).unwrap();
+        for edit in [false, true] {
+            for strict in [false, true] {
+                let mut args = Vec::new();
+                if edit {
+                    args.extend(["--edit", "message"]);
+                }
+                if strict {
+                    args.push("--strict");
+                }
+                let output = dir.command(&args, message.as_bytes());
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "{header:?} edit={edit} strict={strict}: {}",
+                    stderr(&output)
+                );
+                assert!(
+                    output.stdout.is_empty() && output.stderr.is_empty(),
+                    "{header:?}"
+                );
+                assert_eq!(fs::read(dir.0.join("message")).unwrap(), message.as_bytes());
+            }
+        }
+    }
+}
+
+#[test]
+fn autosquash_prefixes_allow_empty_nonconventional_and_nested_targets() {
+    let dir = TestDir::new();
+    for prefix in ["fixup! ", "amend! ", "squash! "] {
+        for target in ["", "not conventional", "fixup! amend! target"] {
+            let message = format!("{prefix}{target}\n");
+            for args in [&[][..], &["--strict"][..]] {
+                let output = dir.command(args, message.as_bytes());
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "{message:?}: {}",
+                    stderr(&output)
+                );
+                assert!(output.stdout.is_empty() && output.stderr.is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn first_filtered_header_alone_determines_whether_a_message_is_ignored() {
+    let dir = TestDir::new();
+    for edit in [false, true] {
+        let args: &[&str] = if edit {
+            &["--edit", "message", "--strict"]
+        } else {
+            &["--strict"]
+        };
+        for (message, env, code, diagnostic) in [
+            ("# template\nfixup! invalid\nbody \n", vec![], 0, ""),
+            (
+                "# template\nfixup! invalid\nbody \n",
+                vec![(STRIP, "false")],
+                1,
+                "header-format",
+            ),
+            (
+                "invalid\n\nMerge branch topic\n",
+                vec![],
+                1,
+                "header-format",
+            ),
+            (
+                "# ------------------------ >8 ------------------------\nfixup! invalid\n",
+                vec![],
+                1,
+                "header-format",
+            ),
+            (
+                "# ------------------------ >8 ------------------------\nfixup! invalid\n",
+                vec![(CUT, "false")],
+                0,
+                "",
+            ),
+        ] {
+            fs::write(dir.0.join("message"), message).unwrap();
+            let output = dir.command_with_env(args, message.as_bytes(), &env);
+            assert_eq!(
+                output.status.code(),
+                Some(code),
+                "{message:?} {env:?}: {}",
+                stderr(&output)
+            );
+            if code == 0 {
+                assert!(output.stderr.is_empty());
+            } else {
+                assert!(stderr(&output).contains(diagnostic));
+            }
+            assert_eq!(fs::read_to_string(dir.0.join("message")).unwrap(), message);
+        }
+    }
+}
+
+#[test]
+fn disabled_ignore_groups_and_nonmatching_headers_preserve_rule_severity() {
+    let dir = TestDir::new();
+    for (group, header) in [
+        ("autosquash", "fixup! invalid"),
+        ("merge", "Merge branch topic"),
+        ("revert", "Revert invalid"),
+    ] {
+        fs::write(dir.0.join("rules.jsonc"), format!(r#"{{ "version": 1, "ignore": {{ "{group}": false }}, "rules": {{ "header-format": {{ "severity": "warning" }} }} }}"#)).unwrap();
+        for (strict, code) in [(false, 0), (true, 1)] {
+            let args: &[&str] = if strict {
+                &["--config", "rules.jsonc", "--strict"]
+            } else {
+                &["--config", "rules.jsonc"]
+            };
+            let output = dir.command(args, header.as_bytes());
+            assert_eq!(
+                output.status.code(),
+                Some(code),
+                "{group}: {}",
+                stderr(&output)
+            );
+            assert!(stderr(&output).contains("warning[header-format]"));
+        }
+    }
+    for (group, still_ignored) in [
+        ("autosquash", "Merge branch topic"),
+        ("merge", "Revert invalid"),
+        ("revert", "fixup! invalid"),
+    ] {
+        fs::write(
+            dir.0.join("rules.jsonc"),
+            format!(r#"{{ "version": 1, "ignore": {{ "{group}": false }} }}"#),
+        )
+        .unwrap();
+        let output = dir.command(
+            &["--config", "rules.jsonc", "--strict"],
+            still_ignored.as_bytes(),
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{group}: {}",
+            stderr(&output)
+        );
+        assert!(output.stderr.is_empty());
+    }
+    for header in [
+        "fixup!invalid",
+        "Fixup! invalid",
+        "Merge\tbranch topic",
+        "revert: change.",
+    ] {
+        let output = dir.command(&[], header.as_bytes());
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{header}: {}",
+            stderr(&output)
+        );
+        assert!(stderr(&output).contains(if header.starts_with("revert:") {
+            "subject-full-stop"
+        } else {
+            "header-format"
+        }));
+    }
+}
+
+#[test]
+fn custom_ignore_patterns_apply_to_first_header_even_when_builtin_groups_are_disabled() {
+    let dir = TestDir::new();
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1, "ignore": { "merge": false, "revert": false, "autosquash": false, "header-patterns": ["^特例:", "ticket-[0-9]+$"] } }"#).unwrap();
+    for (message, code) in [
+        ("特例: anything\ninvalid \n", 0),
+        ("invalid ticket-42\nbody \n", 0),
+        ("invalid ticket-42 extra\n", 1),
+        ("invalid\n\n特例: body\n", 1),
+        ("Merge branch topic\n", 1),
+    ] {
+        for edit in [false, true] {
+            fs::write(dir.0.join("message"), message).unwrap();
+            let args: &[&str] = if edit {
+                &["--config", "rules.jsonc", "--strict", "--edit", "message"]
+            } else {
+                &["--config", "rules.jsonc", "--strict"]
+            };
+            let output = dir.command(args, message.as_bytes());
+            assert_eq!(
+                output.status.code(),
+                Some(code),
+                "{message:?}: {}",
+                stderr(&output)
+            );
+            if code == 0 {
+                assert!(output.stderr.is_empty());
+            } else {
+                assert!(stderr(&output).contains("header-format"));
+            }
+        }
+    }
+}
+
+#[test]
+fn custom_regex_character_classes_use_ascii_matching() {
+    let dir = TestDir::new();
+    let config = serde_json::json!({"version": 1, "ignore": {"header-patterns": [r"^id:\w\s\d$"]}});
+    fs::write(dir.0.join("rules.jsonc"), config.to_string()).unwrap();
+    for (message, code) in [
+        ("id:a 7", 0),
+        ("id:界 7", 1),
+        ("id:a\u{a0}7", 1),
+        ("id:a ７", 1),
+    ] {
+        let output = dir.command(&["--config", "rules.jsonc", "--strict"], message.as_bytes());
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{message:?}: {}",
+            stderr(&output)
+        );
+        if code == 0 {
+            assert!(output.stderr.is_empty());
+        } else {
+            assert!(stderr(&output).contains("header-format"));
+        }
+    }
+}
+
+#[test]
+fn invalid_ignore_patterns_are_configuration_errors_before_an_ignore_can_match() {
+    let dir = TestDir::new();
+    for pattern in ["", "(", "(?=x)", r"\p{Greek}"] {
+        let config = serde_json::json!({"version": 1, "ignore": {"header-patterns": [pattern]}});
+        fs::write(dir.0.join("rules.jsonc"), config.to_string()).unwrap();
+        for args in [
+            &["--config", "rules.jsonc"][..],
+            &["--config", "rules.jsonc", "--edit", "message"][..],
+        ] {
+            fs::write(dir.0.join("message"), "fixup! target\n").unwrap();
+            let output = dir.command(args, b"fixup! target\n");
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "{pattern:?}: {}",
+                stderr(&output)
+            );
+            assert!(output.stdout.is_empty() && !output.stderr.is_empty());
+        }
+    }
+    fs::write(
+        dir.0.join("rules.jsonc"),
+        r#"{ "version": 1, "ignore": { "header-patterns": [".*"] } }"#,
+    )
+    .unwrap();
+    let output = dir.command(
+        &["--config", "rules.jsonc", "--strict"],
+        b"invalid\nbody \n",
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn standard_input_and_strict_exit_codes_match_severity() {
     let dir = TestDir::new();
     let output = dir.command(&[], b"feat: add parser\n");

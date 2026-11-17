@@ -73,6 +73,48 @@ fn generated_defaults_and_metadata_are_accepted_without_fetching_urls() {
 }
 
 #[test]
+fn ignore_settings_are_described_in_the_schema_and_generated_defaults() {
+    let schema = schema();
+    let validator = jsonschema::draft7::new(&schema).unwrap();
+    let defaults: Value = serde_json::from_str(&Config::default_json().unwrap()).unwrap();
+    assert_eq!(
+        defaults["ignore"],
+        json!({
+            "merge": true, "revert": true, "autosquash": true, "header-patterns": []
+        })
+    );
+    assert!(schema["properties"]["ignore"]["description"].is_string());
+    for (field, default) in [
+        ("merge", json!(true)),
+        ("revert", json!(true)),
+        ("autosquash", json!(true)),
+        ("header-patterns", json!([])),
+    ] {
+        assert_eq!(
+            schema["properties"]["ignore"]["properties"][field]["default"],
+            default
+        );
+    }
+    for valid in [
+        json!({"version": 1, "ignore": {}}),
+        json!({"version": 1, "ignore": {"merge": false, "header-patterns": ["^release", "日本語"]}}),
+    ] {
+        check(&validator, &valid, true);
+    }
+    for invalid in [
+        json!({"version": 1, "ignore": null}),
+        json!({"version": 1, "ignore": {"merge": null}}),
+        json!({"version": 1, "ignore": {"revert": "false"}}),
+        json!({"version": 1, "ignore": {"autosquash": 0}}),
+        json!({"version": 1, "ignore": {"header-patterns": [""]}}),
+        json!({"version": 1, "ignore": {"header-patterns": [null]}}),
+        json!({"version": 1, "ignore": {"unknown": true}}),
+    ] {
+        check(&validator, &invalid, false);
+    }
+}
+
+#[test]
 fn schema_and_parser_agree_on_structural_configuration_constraints() {
     let validator = jsonschema::draft7::new(&schema()).unwrap();
     let valid = [
