@@ -15,17 +15,20 @@ standalone option. It does not modify the message or install Git hooks.
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
 | `--print-default-config` | Print built-in defaults as editable JSON to stdout and exit. |
+| `--print-config-schema` | Print the configuration JSON Schema to stdout and exit. |
 | `--help-for-agents` | Print [agent guidance](agent-usage.md) to stdout and exit successfully. |
 | `-h`, `--help` | Display command help and exit successfully. |
 | `-V`, `--version` | Print the program name and version to standard output and exit successfully. |
 
-Options can appear in any order and each may be used once. `--help-for-agents` and
-`--print-default-config` must each be used alone; combining either with any other argument,
-including `--help` or `--version`, is an argument error with exit code `2`. Neither reads standard
-input, invokes Git, discovers or loads configuration, or reads the filtering environment variables.
-`--help-for-agents` prints the Markdown bundled at build time. `--print-default-config` prints the
-built-in defaults, not the current configuration. Relative paths passed to `--edit` and `--config`
-are resolved from the current working directory.
+Options can appear in any order and each may be used once. `--help-for-agents`,
+`--print-default-config`, and `--print-config-schema` must each be used alone; combining any of
+them with another argument, including `--help` or `--version`, is an argument error with exit
+code `2`. These options do not read standard input, invoke Git, discover or load configuration, or
+read the filtering environment variables. `--help-for-agents` prints the Markdown bundled at build
+time. `--print-default-config` prints the built-in defaults, not the current configuration.
+`--print-config-schema` prints a schema matching this CLI, which may differ from the latest public
+schema. See [editor schema and compatibility](configuration.md#editor-schema-and-compatibility).
+Relative paths passed to `--edit` and `--config` are resolved from the current working directory.
 
 ## Examples
 
@@ -162,7 +165,7 @@ strict mode for agents. Lint diagnostics and command errors are written to stand
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | No errors; warnings allowed unless strict. Help, version, and default config also succeed. |
+| `0` | No errors; warnings allowed unless strict. Informational options also succeed. |
 | `1` | At least one error diagnostic, or any warning with `--strict`. |
 | `2` | Argument, configuration, Git, file reading, or UTF-8 decoding error. |
 

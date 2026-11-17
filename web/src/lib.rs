@@ -65,6 +65,18 @@ mod tests {
     }
 
     #[test]
+    fn ignores_schema_metadata_but_requires_a_string() {
+        assert_eq!(
+            lint_message(
+                "feat: x",
+                r#"{"version":1,"$schema":"https://invalid.example/schema"}"#
+            ),
+            lint_message("feat: x", r#"{"version":1}"#)
+        );
+        assert!(lint_message("feat: x", r#"{"version":1,"$schema":null}"#).is_err());
+    }
+
+    #[test]
     fn rejects_invalid_configuration() {
         for config in [
             r#"{"version":2}"#,

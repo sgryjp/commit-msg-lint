@@ -1,7 +1,7 @@
 mod cli_policy;
 
 use clap::Parser;
-use commit_msg_lint::{config, lint};
+use commit_msg_lint::{config, lint, schema};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -40,6 +40,11 @@ struct Arguments {
         help = "Print the built-in default configuration as JSON and exit. Cannot be combined with other options."
     )]
     print_default_config: bool,
+    #[arg(
+        long,
+        help = "Print the configuration JSON Schema and exit. Cannot be combined with other options."
+    )]
+    print_config_schema: bool,
 }
 
 fn discover_config() -> Result<Option<PathBuf>, String> {
@@ -75,13 +80,23 @@ fn write_stdout(content: &str, description: &str) -> Result<(), String> {
 
 fn run() -> Result<u8, String> {
     let raw_args: Vec<_> = std::env::args_os().skip(1).collect();
-    for option in ["--help-for-agents", "--print-default-config"] {
+    for option in [
+        "--help-for-agents",
+        "--print-default-config",
+        "--print-config-schema",
+    ] {
         if raw_args.len() != 1 && raw_args.iter().any(|argument| argument == option) {
             return Err(format!("{option} cannot be combined with other arguments"));
         }
     }
 
     let args = Arguments::parse();
+    if args.print_config_schema {
+        let schema = schema::config_schema_json()
+            .map_err(|error| format!("cannot serialize configuration schema: {error}"))?;
+        write_stdout(&schema, "configuration schema")?;
+        return Ok(0);
+    }
     if args.print_default_config {
         let defaults = config::Config::default_json()
             .map_err(|error| format!("cannot serialize default configuration: {error}"))?;

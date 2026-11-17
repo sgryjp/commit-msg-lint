@@ -4,6 +4,9 @@ use std::fmt;
 use jsonc_parser::{ParseOptions, parse_to_serde_value};
 use serde::{Deserialize, Serialize};
 
+pub const CONFIG_SCHEMA_URL: &str =
+    "https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json";
+
 const JSONC_OPTIONS: ParseOptions = ParseOptions {
     allow_comments: true,
     allow_loose_object_property_names: false,
@@ -95,34 +98,35 @@ impl RuleKind {
 pub(crate) struct RuleMetadata {
     pub(crate) id: &'static str,
     pub(crate) kind: RuleKind,
+    pub(crate) description: &'static str,
 }
 
 // Preserve the public Rule ID list without maintaining a second copy of the IDs.
 macro_rules! define_rules {
-    ($($id:literal => $kind:ident),+ $(,)?) => {
+    ($($id:literal => $kind:ident, $description:literal);+ $(;)?) => {
         pub const RULES: &[&str] = &[$($id),+];
         pub(crate) const RULE_METADATA: &[RuleMetadata] = &[
-            $(RuleMetadata { id: $id, kind: RuleKind::$kind }),+
+            $(RuleMetadata { id: $id, kind: RuleKind::$kind, description: $description }),+
         ];
     };
 }
 
 define_rules! {
-    "header-format" => Standard,
-    "type-enum" => Standard,
-    "type-case" => Standard,
-    "scope-required" => Scope,
-    "scope-enum" => Scope,
-    "subject-empty" => Standard,
-    "header-trim" => Standard,
-    "subject-full-stop" => Standard,
-    "header-max-width" => HeaderWidth,
-    "section-separator" => Standard,
-    "body-max-width" => LineWidth,
-    "footer-max-width" => LineWidth,
-    "trailer-format" => Standard,
-    "line-trailing-whitespace" => Standard,
-    "control-character" => Standard,
+    "header-format" => Standard, "Checks Header syntax: Type, optional Scope and !, and the colon-space separator.";
+    "type-enum" => Standard, "Checks that the Type is in the allowed types list, ignoring ASCII case.";
+    "type-case" => Standard, "Checks that the Type contains no uppercase ASCII letters.";
+    "scope-required" => Scope, "Checks that a Scope is present.";
+    "scope-enum" => Scope, "Checks that a present Scope matches an entry in allowed-scopes.";
+    "subject-empty" => Standard, "Checks that the Subject is not empty.";
+    "header-trim" => Standard, "Checks that the Header has no leading or trailing whitespace.";
+    "subject-full-stop" => Standard, "Checks that the Subject does not end in a period.";
+    "header-max-width" => HeaderWidth, "Checks Header width in Display Columns.";
+    "section-separator" => Standard, "Checks that exactly one empty line separates Header, Body, and Footer.";
+    "body-max-width" => LineWidth, "Checks the width of each Body line in Display Columns.";
+    "footer-max-width" => LineWidth, "Checks the width of each Footer line in Display Columns.";
+    "trailer-format" => Standard, "Checks that a Footer candidate starts with a valid Trailer.";
+    "line-trailing-whitespace" => Standard, "Checks that Body and Footer lines have no trailing whitespace.";
+    "control-character" => Standard, "Checks lines for forbidden control or bidirectional characters.";
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -173,6 +177,13 @@ impl Default for Config {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
+    #[serde(
+        default,
+        rename = "$schema",
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    schema: Option<String>,
     version: u64,
     #[serde(default)]
     conventional: Conventional,
@@ -257,6 +268,7 @@ impl Config {
             })
             .collect();
         serde_json::to_string_pretty(&RawConfig {
+            schema: Some(CONFIG_SCHEMA_URL.to_owned()),
             version: 1,
             conventional: Conventional {
                 types: Some(config.types),
@@ -465,7 +477,8 @@ mod tests {
         let json = Config::default_json().unwrap();
         assert_eq!(Config::parse(&json).unwrap(), Config::default());
         assert!(json.starts_with("{\n"));
-        assert!(!json.contains("//"));
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["$schema"], CONFIG_SCHEMA_URL);
         assert!(!json.contains("/*"));
         assert!(!json.contains(",\n  }"));
         assert!(!json.contains(",\n}"));
@@ -556,6 +569,7 @@ mod tests {
     #[test]
     fn rejects_null_in_every_optional_configuration_field() {
         for input in [
+            r#"{"version":1,"$schema":null}"#,
             r#"{"version":1,"conventional":{"types":null}}"#,
             r#"{"version":1,"conventional":{"allowed-scopes":null}}"#,
             r#"{"version":1,"display-width":{"ambiguous-width":null}}"#,

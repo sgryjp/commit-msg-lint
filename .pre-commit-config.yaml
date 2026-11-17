@@ -1,6 +1,13 @@
 repos:
   - repo: local
     hooks:
+      - id: sync-config-schema
+        name: sync configuration schema
+        entry: python scripts/sync_config_schema.py
+        language: python
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
       - id: commit-msg-lint
         name: commit-msg-lint
         entry: cargo run --quiet --locked -- --edit

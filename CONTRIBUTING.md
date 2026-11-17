@@ -45,6 +45,29 @@ On Windows, you may need to use the Python launcher:
 python scripts/check_fixture_discovery.py
 ```
 
+### Configuration schema
+
+The generated `site/commit-msg-lint.schema.json` is published on GitHub Pages and tracks `main`.
+Run the schema synchronization tests with:
+
+```sh
+python -B -m unittest discover -s tests -p test_sync_config_schema.py
+```
+
+When configuration behavior changes, regenerate and check it with the pre-commit hooks:
+
+```sh
+pre-commit run --all-files
+# or
+prek run --all-files
+```
+
+The schema hook always runs without filenames. If the generated schema differs, the hook updates
+the file and fails so that you can review it. It also fails if the file is missing, deleted, or
+untracked, even if an untracked file already has the expected content. Review the schema, stage it
+with `git add site/commit-msg-lint.schema.json`, and rerun the checks. If generation fails, the
+existing file is preserved; fix the reported error and rerun the hook.
+
 ## Web demo
 
 To build and preview the WebAssembly demo locally, install the WebAssembly target and `wasm-pack`:
@@ -93,9 +116,10 @@ pre-commit run --all-files
 prek run --all-files
 ```
 
-The hooks do not modify files. When editing Markdown, format the target files explicitly and review
-the diff before running the checks. If automatic formatting leaves diagnostics, fix them by hand
-while preserving the Markdown structure and meaning.
+The Markdown hook does not modify files; the configuration schema hook may update its generated
+file as described above. When editing Markdown, format the target files explicitly and review the
+diff before running the checks. If automatic formatting leaves diagnostics, fix them by hand while
+preserving the Markdown structure and meaning.
 
 ```sh
 cjkfmt format --write README.md docs/example.md
@@ -104,7 +128,7 @@ cjkfmt check README.md docs/example.md
 
 ## Git hooks
 
-Enable Markdown checks before commits and commit-message checks:
+Enable the pre-commit checks, including schema synchronization, and commit-message checks:
 
 ```sh
 pre-commit install --hook-type pre-commit --hook-type commit-msg
