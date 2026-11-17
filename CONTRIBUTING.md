@@ -139,6 +139,12 @@ prek install --hook-type pre-commit --hook-type commit-msg
 The `commit-msg` hook runs this repository's `commit-msg-lint` with `cargo run --locked`. A commit
 fails if the message has errors. Warnings alone do not cause failure.
 
+## Releases
+
+Pushing a Git tag triggers the [release workflow](.github/workflows/release.yml), which creates a
+GitHub Release with automatically generated release notes. It does not publish packages or attach
+build artifacts. Tags pushed before the workflow is available do not trigger it retroactively.
+
 ## Updating cjkfmt
 
 When updating cjkfmt, update the hook release, the version of the binary installed in CI, and the
