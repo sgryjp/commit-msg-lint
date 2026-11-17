@@ -4,24 +4,6 @@ use std::fmt;
 use jsonc_parser::{ParseOptions, parse_to_serde_value};
 use serde::{Deserialize, Serialize};
 
-pub const RULES: &[&str] = &[
-    "header-format",
-    "type-enum",
-    "type-case",
-    "scope-required",
-    "scope-enum",
-    "subject-empty",
-    "header-trim",
-    "subject-full-stop",
-    "header-max-width",
-    "section-separator",
-    "body-max-width",
-    "footer-max-width",
-    "trailer-format",
-    "line-trailing-whitespace",
-    "control-character",
-];
-
 const JSONC_OPTIONS: ParseOptions = ParseOptions {
     allow_comments: true,
     allow_loose_object_property_names: false,
@@ -66,6 +48,83 @@ pub struct Threshold {
     pub severity: Severity,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RuleKind {
+    Standard,
+    Scope,
+    HeaderWidth,
+    LineWidth,
+}
+
+impl RuleKind {
+    pub(crate) fn supports_severity(self) -> bool {
+        match self {
+            Self::Standard | Self::Scope | Self::LineWidth => true,
+            Self::HeaderWidth => false,
+        }
+    }
+
+    pub(crate) fn supports_thresholds(self) -> bool {
+        match self {
+            Self::HeaderWidth | Self::LineWidth => true,
+            Self::Standard | Self::Scope => false,
+        }
+    }
+
+    fn default_thresholds(self) -> &'static [Threshold] {
+        match self {
+            Self::HeaderWidth => &[
+                Threshold {
+                    limit: 50,
+                    severity: Severity::Warning,
+                },
+                Threshold {
+                    limit: 72,
+                    severity: Severity::Error,
+                },
+            ],
+            Self::LineWidth => &[Threshold {
+                limit: 72,
+                severity: Severity::Error,
+            }],
+            Self::Standard | Self::Scope => &[],
+        }
+    }
+}
+
+pub(crate) struct RuleMetadata {
+    pub(crate) id: &'static str,
+    pub(crate) kind: RuleKind,
+}
+
+// Preserve the public Rule ID list without maintaining a second copy of the IDs.
+macro_rules! define_rules {
+    ($($id:literal => $kind:ident),+ $(,)?) => {
+        pub const RULES: &[&str] = &[$($id),+];
+        pub(crate) const RULE_METADATA: &[RuleMetadata] = &[
+            $(RuleMetadata { id: $id, kind: RuleKind::$kind }),+
+        ];
+    };
+}
+
+define_rules! {
+    "header-format" => Standard,
+    "type-enum" => Standard,
+    "type-case" => Standard,
+    "scope-required" => Scope,
+    "scope-enum" => Scope,
+    "subject-empty" => Standard,
+    "header-trim" => Standard,
+    "subject-full-stop" => Standard,
+    "header-max-width" => HeaderWidth,
+    "section-separator" => Standard,
+    "body-max-width" => LineWidth,
+    "footer-max-width" => LineWidth,
+    "trailer-format" => Standard,
+    "line-trailing-whitespace" => Standard,
+    "control-character" => Standard,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rule {
     pub enabled: bool,
@@ -83,34 +142,15 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let rules = RULES
+        let rules = RULE_METADATA
             .iter()
-            .map(|&id| {
-                let thresholds = match id {
-                    "header-max-width" => vec![
-                        Threshold {
-                            limit: 50,
-                            severity: Severity::Warning,
-                        },
-                        Threshold {
-                            limit: 72,
-                            severity: Severity::Error,
-                        },
-                    ],
-                    "body-max-width" | "footer-max-width" => {
-                        vec![Threshold {
-                            limit: 72,
-                            severity: Severity::Error,
-                        }]
-                    }
-                    _ => Vec::new(),
-                };
+            .map(|metadata| {
                 (
-                    id.to_string(),
+                    metadata.id.to_string(),
                     Rule {
-                        enabled: !matches!(id, "scope-required" | "scope-enum"),
+                        enabled: metadata.kind != RuleKind::Scope,
                         severity: Severity::Error,
-                        thresholds,
+                        thresholds: metadata.kind.default_thresholds().to_vec(),
                     },
                 )
             })
@@ -198,16 +238,16 @@ impl Config {
     /// Returns a plain JSON representation of the built-in defaults.
     pub fn default_json() -> Result<String, serde_json::Error> {
         let config = Self::default();
-        let rules = config
-            .rules
+        let rules = RULE_METADATA
             .iter()
             // Scope rules are controlled by the conventional settings, so emitting their
             // defaults as overrides would prevent edits to those settings from taking effect.
-            .filter(|(id, _)| !matches!(id.as_str(), "scope-required" | "scope-enum"))
-            .map(|(id, rule)| {
-                let has_thresholds = !rule.thresholds.is_empty();
+            .filter(|metadata| metadata.kind != RuleKind::Scope)
+            .map(|metadata| {
+                let rule = &config.rules[metadata.id];
+                let has_thresholds = metadata.kind.supports_thresholds();
                 (
-                    id.clone(),
+                    metadata.id.to_string(),
                     RawRule {
                         enabled: Some(rule.enabled),
                         severity: (!has_thresholds).then_some(rule.severity),
@@ -254,15 +294,16 @@ impl Config {
             config.ambiguous_width = width;
         }
         for (id, override_rule) in raw.rules {
-            let rule = config
-                .rules
-                .get_mut(&id)
+            let metadata = RULE_METADATA
+                .iter()
+                .find(|metadata| metadata.id == id)
                 .ok_or_else(|| format!("unknown rule: {id}"))?;
+            let rule = config.rules.get_mut(&id).unwrap();
             if let Some(enabled) = override_rule.enabled {
                 rule.enabled = enabled;
             }
             if let Some(severity) = override_rule.severity {
-                if id == "header-max-width" {
+                if !metadata.kind.supports_severity() {
                     return Err(format!("{id} uses thresholds, not severity"));
                 }
                 rule.severity = severity;
@@ -271,7 +312,7 @@ impl Config {
                 }
             }
             if let Some(thresholds) = override_rule.thresholds {
-                if rule.thresholds.is_empty() {
+                if !metadata.kind.supports_thresholds() {
                     return Err(format!("{id} does not support thresholds"));
                 }
                 if override_rule.severity.is_some() {
@@ -305,6 +346,113 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_rule_preserves_its_defaults_and_supported_settings() {
+        let cases = [
+            ("header-format", true, true, false),
+            ("type-enum", true, true, false),
+            ("type-case", true, true, false),
+            ("scope-required", false, true, false),
+            ("scope-enum", false, true, false),
+            ("subject-empty", true, true, false),
+            ("header-trim", true, true, false),
+            ("subject-full-stop", true, true, false),
+            ("header-max-width", true, false, true),
+            ("section-separator", true, true, false),
+            ("body-max-width", true, true, true),
+            ("footer-max-width", true, true, true),
+            ("trailer-format", true, true, false),
+            ("line-trailing-whitespace", true, true, false),
+            ("control-character", true, true, false),
+        ];
+        assert_eq!(RULES, cases.map(|(id, _, _, _)| id));
+        let defaults = Config::default();
+        assert_eq!(defaults.rules.len(), cases.len());
+        for (id, default_enabled, supports_severity, supports_thresholds) in cases {
+            let default = &defaults.rules[id];
+            assert_eq!(default.enabled, default_enabled, "{id}");
+            assert_eq!(default.severity, Severity::Error, "{id}");
+            let expected_thresholds = match id {
+                "header-max-width" => vec![
+                    Threshold {
+                        limit: 50,
+                        severity: Severity::Warning,
+                    },
+                    Threshold {
+                        limit: 72,
+                        severity: Severity::Error,
+                    },
+                ],
+                "body-max-width" | "footer-max-width" => vec![Threshold {
+                    limit: 72,
+                    severity: Severity::Error,
+                }],
+                _ => vec![],
+            };
+            assert_eq!(default.thresholds, expected_thresholds, "{id}");
+
+            let parse = |settings: &str| {
+                Config::parse(&format!(r#"{{"version":1,"rules":{{"{id}":{settings}}}}}"#))
+            };
+            let severity = parse(r#"{"enabled":false,"severity":"warning"}"#);
+            if supports_severity {
+                let rule = &severity.unwrap().rules[id];
+                assert!(!rule.enabled, "{id}");
+                assert_eq!(rule.severity, Severity::Warning, "{id}");
+                assert!(
+                    rule.thresholds
+                        .iter()
+                        .all(|t| t.severity == Severity::Warning),
+                    "{id}"
+                );
+            } else {
+                assert_eq!(
+                    severity.unwrap_err(),
+                    format!("{id} uses thresholds, not severity")
+                );
+            }
+
+            let thresholds =
+                parse(r#"{"enabled":false,"thresholds":[{"limit":10,"severity":"warning"}]}"#);
+            if supports_thresholds {
+                let rule = &thresholds.unwrap().rules[id];
+                assert!(!rule.enabled, "{id}");
+                assert_eq!(
+                    rule.thresholds,
+                    [Threshold {
+                        limit: 10,
+                        severity: Severity::Warning
+                    }],
+                    "{id}"
+                );
+                assert_eq!(
+                    parse(r#"{"thresholds":[]}"#).unwrap_err(),
+                    format!("{id} has invalid thresholds")
+                );
+            } else {
+                assert_eq!(
+                    thresholds.unwrap_err(),
+                    format!("{id} does not support thresholds")
+                );
+            }
+
+            let both =
+                parse(r#"{"severity":"warning","thresholds":[{"limit":10,"severity":"warning"}]}"#);
+            let expected_error = if !supports_severity {
+                format!("{id} uses thresholds, not severity")
+            } else if !supports_thresholds {
+                format!("{id} does not support thresholds")
+            } else {
+                format!("{id} cannot specify both severity and thresholds")
+            };
+            assert_eq!(both.unwrap_err(), expected_error);
+        }
+        assert_eq!(
+            Config::parse(r#"{"version":1,"rules":{"unknown":{}}}"#).unwrap_err(),
+            "unknown rule: unknown"
+        );
+    }
 
     #[test]
     fn repository_configuration_preserves_its_allowed_types() {
