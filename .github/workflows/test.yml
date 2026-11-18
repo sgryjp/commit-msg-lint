@@ -32,6 +32,12 @@ jobs:
           python-version: "3.x"
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --workspace
+      - if: matrix.os == 'ubuntu-latest'
+        run: python -m pip install --upgrade pre-commit
+      - if: matrix.os == 'ubuntu-latest'
+        run: pre-commit validate-manifest .pre-commit-hooks.yaml
+      - if: matrix.os == 'ubuntu-latest'
+        run: python tests/test_pre_commit_hook.py
       - run: python scripts/check_fixture_discovery.py
       - run: python -B -m unittest discover -s tests -p test_sync_config_schema.py
 
