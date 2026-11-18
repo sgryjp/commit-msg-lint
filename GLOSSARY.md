@@ -49,6 +49,10 @@ A rule that determines whether a commit message complies with the conventions an
 diagnostic with a severity when it does not.
 _Avoid_: check, validator
 
+**Ignored Message**:
+A commit message excluded from all Lint Rules. An Ignored Message may be generated or written
+manually.
+
 **Commit Message Linter**:
 A tool that determines whether a commit message complies with the team’s conventions.
 _Avoid_: formatter, commit generator
