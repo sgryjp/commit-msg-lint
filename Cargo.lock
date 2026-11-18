@@ -226,7 +226,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "commit-msg-lint"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "glob",
@@ -244,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "commit-msg-lint-web"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "commit-msg-lint",
  "serde_json",

@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-11-18
+
 ### Added
 
 - Configurable ignores for recognized Git- and hosting-service-generated merge, revert, and
   autosquash messages, with custom Header patterns; matched messages skip all lint Rules.
 - GitHub Releases are created automatically when a version tag is pushed.
+- Published a pre-commit hook for linting commit messages, including successful-commit warnings.
 
 ## [0.0.1] - 2026-11-17
 
@@ -29,5 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The CLI, library, and Web demo share the same linting and configuration behavior;
   the CLI applies Git message filtering before linting by default.
 
-[Unreleased]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.1...HEAD
+[Unreleased]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.2...HEAD
+[0.0.2]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.1...0.0.2
 [0.0.1]: https://github.com/sgryjp/commit-msg-lint/releases/tag/0.0.1
