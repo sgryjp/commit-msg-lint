@@ -74,7 +74,8 @@ allow those downloads. The Rust setup runs `cargo install --bins` without `--loc
 resolve dependencies without following the repository's `Cargo.lock`.
 
 Warnings succeed by default, in keeping with the distinction between recommended and required
-limits. To make warnings fail, override the hook arguments in your configuration:
+limits. The hook displays diagnostics even when it succeeds, so these warnings remain visible. To
+make warnings fail, override the hook arguments in your configuration:
 
 ```yaml
       - id: commit-msg-lint

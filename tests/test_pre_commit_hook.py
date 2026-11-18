@@ -108,8 +108,12 @@ def verify_invalid_commit_is_rejected(repo: Path, env: dict[str, str]) -> None:
 def verify_warnings_pass_without_strict_mode(repo: Path, env: dict[str, str]) -> None:
     warning_message = "feat: " + "x" * 45
     result = commit_with_message(repo, warning_message, env, 3)
-    if result.returncode:
-        raise AssertionError(f"warning should pass by default:\n{result.stderr}")
+    output = result.stdout + result.stderr
+    if result.returncode or "warning[header-max-width]" not in output:
+        raise AssertionError(
+            "warning should be visible while the commit succeeds:\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
 
 
 def verify_strict_mode_rejects_warnings(repo: Path, env: dict[str, str]) -> None:

@@ -5,3 +5,4 @@
   args: [--edit]
   stages: [commit-msg]
   always_run: true
+  verbose: true
