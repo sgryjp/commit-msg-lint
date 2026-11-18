@@ -148,9 +148,33 @@ fails if the message has errors. Warnings alone do not cause failure.
 
 ## Releases
 
-Pushing a Git tag triggers the [release workflow](.github/workflows/release.yml), which creates a
-GitHub Release with automatically generated release notes. It does not publish packages or attach
-build artifacts. Tags pushed before the workflow is available do not trigger it retroactively.
+1. Prepare a release change:
+   - Update the CLI version in `Cargo.toml` and the non-published Web package version in
+     `web/Cargo.toml`. Run `cargo check --workspace` to update `Cargo.lock` and review the diff.
+   - Move the relevant `CHANGELOG.md` entries from Unreleased to a dated release section. Review
+     the changes since the previous release for user-visible additions, fixes, and behavior changes,
+     and update the comparison links. Keep an Unreleased section for future changes.
+2. Run the checks described above, including `cargo test --locked --workspace` and
+   `pre-commit run --all-files` (or `prek run --all-files`). Confirm that
+   `cargo run --locked -- --version` prints the new CLI version.
+3. Merge the release change into `main` and wait for the Test workflow to pass on the exact commit
+   to be released. The release workflow does not wait for tests.
+4. Create an annotated tag without a `v` prefix, matching the version, and push it. Replace the
+   version and commit below with the release version and verified commit:
+
+   ```sh
+   git tag -a 0.0.2 <verified-commit> -m "Release 0.0.2"
+   git push origin 0.0.2
+   ```
+
+5. Check that the [release workflow](.github/workflows/release.yml) succeeded and that the GitHub
+   Release points to the intended tag. The workflow generates release notes from GitHub, not from
+   `CHANGELOG.md`; review the notes against the changelog and edit them if needed. Verify that the
+   pre-commit hook can be installed using the new tag.
+
+The workflow runs on tag pushes and does not publish packages or attach build artifacts. Tags pushed
+before the workflow is available do not trigger it retroactively. The Web demo and configuration
+schema on GitHub Pages track `main`, not the release tag.
 
 ## Updating cjkfmt
 
