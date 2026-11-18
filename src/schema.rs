@@ -92,6 +92,20 @@ pub fn config_schema_json() -> Result<String, serde_json::Error> {
                     }
                 }
             },
+            "ignore": {
+                "type": "object", "additionalProperties": false,
+                "description": "Ignore entire messages whose Header matches a built-in group or a custom regex-lite pattern. Regex syntax is validated by the parser.",
+                "properties": {
+                    "merge": {"type": "boolean", "default": true, "description": "Ignore recognized merge Headers."},
+                    "revert": {"type": "boolean", "default": true, "description": "Ignore recognized revert and reapply Headers."},
+                    "autosquash": {"type": "boolean", "default": true, "description": "Ignore recognized fixup, amend, and squash Headers."},
+                    "header-patterns": {
+                        "type": "array", "default": [],
+                        "items": {"type": "string", "minLength": 1},
+                        "description": "Additional nonempty regex-lite patterns searched within the first Header."
+                    }
+                }
+            },
             "rules": {
                 "type": "object", "additionalProperties": false, "properties": rules,
                 "description": "Rule overrides are validated even when the Rule is disabled."

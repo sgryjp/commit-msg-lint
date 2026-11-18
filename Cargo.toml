@@ -10,6 +10,7 @@ serde_json = "1"
 jsonc-parser = { version = "0.34", features = ["serde"] }
 serde_with = { version = "3.24", default-features = false, features = ["std"] }
 unicode-width = "=0.2.2"
+regex-lite = "0.1"
 
 [build-dependencies]
 glob = "0.3"

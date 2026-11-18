@@ -197,6 +197,113 @@ impl HookRepo {
 }
 
 #[test]
+fn git_autosquash_commits_invoke_strict_hook_and_ignore_the_complete_generated_message() {
+    for (option, prefix) in [
+        ("--fixup=", "fixup! "),
+        ("--fixup=amend:", "amend! "),
+        ("--squash=", "squash! "),
+    ] {
+        let repo = HookRepo::new();
+        let target = format!("feat: {}", "界".repeat(40));
+        assert_success(&repo.git(&["commit", "-q", "--no-verify", "-m", &target], &[]));
+        let oid = repo.git(&["rev-parse", "HEAD"], &[]);
+        assert_success(&oid);
+        let option = format!("{option}{}", text(&oid.stdout).trim());
+        fs::write(repo.repo.join("tracked"), "updated\n").unwrap();
+        assert_success(&repo.git(&["add", "tracked"], &[]));
+        script(
+            &repo.root.join("hooks/commit-msg"),
+            "#!/bin/sh\ncp \"$1\" \"$HOOK_CAPTURE\" || exit 99\n\"$LINT_BIN\" --strict --config \"$LINT_CONFIG\" --edit \"$1\"\nstatus=$?\nprintf '%s\\n' \"$status\" > \"$HOOK_STATUS\"\nexit \"$status\"\n",
+        );
+        let output = repo.git(&["commit", "-q", &option], &[("GIT_EDITOR", "true")]);
+        assert_success(&output);
+        assert_eq!(repo.hook_status(), 0);
+        assert!(output.stderr.is_empty(), "{}", text(&output.stderr));
+        assert!(text(&repo.captured()).starts_with(&format!("{prefix}{target}")));
+        assert!(
+            repo.final_message(&repo.repo)
+                .starts_with(&format!("{prefix}{target}"))
+        );
+    }
+}
+
+#[test]
+fn git_merge_invokes_hook_and_can_be_rejected_when_merge_ignores_are_disabled() {
+    for disabled in [false, true] {
+        let repo = HookRepo::new();
+        assert_success(&repo.git(&["commit", "-q", "-m", "feat: initial"], &[]));
+        assert_success(&repo.git(&["checkout", "-q", "-b", "main-test"], &[]));
+        assert_success(&repo.git(&["checkout", "-q", "-b", "topic"], &[]));
+        fs::write(repo.repo.join("topic"), "topic\n").unwrap();
+        assert_success(&repo.git(&["add", "topic"], &[]));
+        assert_success(&repo.git(&["commit", "-q", "-m", "feat: topic"], &[]));
+        assert_success(&repo.git(&["checkout", "-q", "main-test"], &[]));
+        fs::write(repo.repo.join("main"), "main\n").unwrap();
+        assert_success(&repo.git(&["add", "main"], &[]));
+        assert_success(&repo.git(&["commit", "-q", "-m", "feat: main"], &[]));
+        fs::remove_file(repo.root.join("hook-status")).unwrap();
+        if disabled {
+            fs::write(
+                repo.root.join("lint.jsonc"),
+                r#"{ "version": 1, "ignore": { "merge": false } }"#,
+            )
+            .unwrap();
+        }
+        let output = repo.git(&["merge", "--no-ff", "--no-edit", "topic"], &[]);
+        assert_eq!(
+            output.status.success(),
+            !disabled,
+            "{}",
+            text(&output.stderr)
+        );
+        assert_eq!(repo.hook_status(), if disabled { 1 } else { 0 });
+        assert!(text(&repo.captured()).starts_with("Merge branch 'topic'"));
+        if disabled {
+            assert!(text(&output.stderr).contains("error[header-format]"));
+        } else {
+            assert!(output.stderr.is_empty(), "{}", text(&output.stderr));
+            assert!(
+                repo.final_message(&repo.repo)
+                    .starts_with("Merge branch 'topic'")
+            );
+        }
+    }
+}
+
+#[test]
+fn git_revert_without_edit_bypasses_commit_msg_hook_but_its_message_can_be_linted() {
+    let repo = HookRepo::new();
+    assert_success(&repo.git(&["commit", "-q", "-m", "feat: initial"], &[]));
+    fs::write(repo.repo.join("tracked"), "changed\n").unwrap();
+    assert_success(&repo.git(&["add", "tracked"], &[]));
+    assert_success(&repo.git(&["commit", "-q", "-m", "feat: change"], &[]));
+    fs::remove_file(repo.root.join("hook-status")).unwrap();
+    fs::remove_file(repo.root.join("hook-input")).unwrap();
+    assert_success(&repo.git(&["revert", "--no-edit", "HEAD"], &[]));
+    assert!(!repo.root.join("hook-status").exists());
+    assert!(!repo.root.join("hook-input").exists());
+    let message = repo.final_message(&repo.repo);
+    assert!(message.starts_with("Revert \"feat: change\""));
+    fs::write(repo.root.join("reverted-message"), &message).unwrap();
+    let output = isolated_command(
+        env!("CARGO_BIN_EXE_commit-msg-lint"),
+        &repo.root,
+        &repo.repo,
+    )
+    .args([
+        "--strict",
+        "--config",
+        repo.root.join("lint.jsonc").to_str().unwrap(),
+        "--edit",
+        repo.root.join("reverted-message").to_str().unwrap(),
+    ])
+    .output()
+    .unwrap();
+    assert_success(&output);
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+}
+
+#[test]
 fn editor_commit_strips_git_comments_and_preserves_a_valid_header() {
     let repo = HookRepo::new();
     repo.message("feat: change\n\n# ignored \n");

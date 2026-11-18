@@ -44,6 +44,10 @@ input emptied by filtering.
 
 ## Header
 
+Before applying any Rules, the linter checks the first Header against the configured
+[ignore patterns](configuration.md#ignored-messages). A match excludes the entire message silently;
+the checks below apply only to messages that are not ignored.
+
 A parseable Header has this shape:
 
 ```text
