@@ -82,9 +82,9 @@ make warnings fail, override the hook arguments in your configuration:
         args: [--strict, --edit]
 ```
 
-The hook definition keeps its command in `entry: commit-msg-lint` and supplies `--edit` through
-`args`. pre-commit does not allow users to override a remote hook's `entry`; overriding `args`
-keeps the message-file argument after the CLI options, so strict mode works with the same hook ID.
+The hook definition uses `entry: commit-msg-lint` and supplies `--edit` through `args`. When you
+override `args` for strict mode, include both options; pre-commit appends the message filename after
+them, so the same hook ID works in either mode.
 
 The CLI's default comment and scissors filtering is an approximation, not Git's final message
 cleanup. For example, the CLI removes comment lines by default, while Git's default cleanup for

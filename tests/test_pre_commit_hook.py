@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK_MANIFEST = ".pre-commit-hooks.yaml"
+WARNING_MESSAGE = "feat: " + "x" * 45
 
 
 def run(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -61,15 +62,28 @@ def make_hook_source(path: Path, env: dict[str, str]) -> str:
     return run(["git", "rev-parse", "HEAD"], path, env).stdout.strip()
 
 
-def write_consumer_config(path: Path, source: Path, revision: str, strict: bool) -> None:
-    args = "        args: [--strict, --edit]\n" if strict else ""
+def write_consumer_config(
+    path: Path,
+    source: Path,
+    revision: str,
+    strict: bool,
+    override_entry: bool = False,
+) -> None:
+    if strict and override_entry:
+        raise ValueError("select either strict args or a strict entry override")
+    if override_entry:
+        hook_config = "        entry: commit-msg-lint --strict\n"
+    elif strict:
+        hook_config = "        args: [--strict, --edit]\n"
+    else:
+        hook_config = ""
     (path / ".pre-commit-config.yaml").write_text(
         "repos:\n"
         f"  - repo: {source.as_uri()}\n"
         f"    rev: {revision}\n"
         "    hooks:\n"
         "      - id: commit-msg-lint\n"
-        f"{args}",
+        f"{hook_config}",
         encoding="utf-8",
     )
 
@@ -106,8 +120,7 @@ def verify_invalid_commit_is_rejected(repo: Path, env: dict[str, str]) -> None:
 
 
 def verify_warnings_pass_without_strict_mode(repo: Path, env: dict[str, str]) -> None:
-    warning_message = "feat: " + "x" * 45
-    result = commit_with_message(repo, warning_message, env, 3)
+    result = commit_with_message(repo, WARNING_MESSAGE, env, 3)
     output = result.stdout + result.stderr
     if result.returncode or "warning[header-max-width]" not in output:
         raise AssertionError(
@@ -117,12 +130,21 @@ def verify_warnings_pass_without_strict_mode(repo: Path, env: dict[str, str]) ->
 
 
 def verify_strict_mode_rejects_warnings(repo: Path, env: dict[str, str]) -> None:
-    warning_message = "feat: " + "x" * 45
-    result = commit_with_message(repo, warning_message, env, 4)
+    result = commit_with_message(repo, WARNING_MESSAGE, env, 4)
     output = result.stdout + result.stderr
     if result.returncode == 0 or "warning[header-max-width]" not in output:
         raise AssertionError(
             "strict args did not reject a warning:\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+
+def verify_strict_entry_override_rejects_warnings(repo: Path, env: dict[str, str]) -> None:
+    result = commit_with_message(repo, WARNING_MESSAGE, env, 5)
+    output = result.stdout + result.stderr
+    if result.returncode == 0 or "warning[header-max-width]" not in output:
+        raise AssertionError(
+            "strict entry override did not reject a warning:\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
 
@@ -178,6 +200,9 @@ def main() -> None:
         write_consumer_config(consumer, source, revision, strict=True)
         run(["git", "add", ".pre-commit-config.yaml"], consumer, env)
         verify_strict_mode_rejects_warnings(consumer, env)
+        write_consumer_config(consumer, source, revision, strict=False, override_entry=True)
+        run(["git", "add", ".pre-commit-config.yaml"], consumer, env)
+        verify_strict_entry_override_rejects_warnings(consumer, env)
 
     print("pre-commit commit-msg hook integration passed")
 
