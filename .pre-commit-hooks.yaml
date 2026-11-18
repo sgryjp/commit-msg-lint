@@ -1,0 +1,7 @@
+- id: commit-msg-lint
+  name: commit-msg-lint
+  entry: commit-msg-lint
+  language: rust
+  args: [--edit]
+  stages: [commit-msg]
+  always_run: true

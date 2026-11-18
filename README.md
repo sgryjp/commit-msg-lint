@@ -44,6 +44,57 @@ entirety, including width and severity checks. Matching is text-based, so it can
 manually written messages. Configure or disable these patterns as described in
 [ignored messages](docs/configuration.md#ignored-messages).
 
+## pre-commit
+
+This repository defines a `commit-msg` hook for [pre-commit](https://pre-commit.com/). Add it to
+your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/sgryjp/commit-msg-lint
+    rev: <tag-or-commit-containing-this-hook>
+    hooks:
+      - id: commit-msg-lint
+```
+
+Replace the placeholder with a release tag or commit SHA whose tree contains
+`.pre-commit-hooks.yaml`; the placeholder is not an installable revision. Install the Git hook with:
+
+```sh
+pre-commit install --hook-type commit-msg
+```
+
+This installs the `commit-msg` stage, which a plain `pre-commit install` does not enable. On its
+first run, pre-commit creates a Rust environment and builds the CLI. If `cargo --version` succeeds,
+pre-commit uses the system toolchain; otherwise, it bootstraps Rust through rustup and installs the
+stable toolchain by default. This may download rustup and Rust components, so bootstrapping requires
+network access. Cargo may also need network access to fetch uncached crate dependencies for the
+build. Restricted or offline environments must provide the needed toolchain and dependencies or
+allow those downloads. The Rust setup runs `cargo install --bins` without `--locked`, so Cargo may
+resolve dependencies without following the repository's `Cargo.lock`.
+
+Warnings succeed by default, in keeping with the distinction between recommended and required
+limits. To make warnings fail, override the hook arguments in your configuration:
+
+```yaml
+      - id: commit-msg-lint
+        args: [--strict, --edit]
+```
+
+The hook definition keeps its command in `entry: commit-msg-lint` and supplies `--edit` through
+`args`. pre-commit does not allow users to override a remote hook's `entry`; overriding `args`
+keeps the message-file argument after the CLI options, so strict mode works with the same hook ID.
+
+The CLI's default comment and scissors filtering is an approximation, not Git's final message
+cleanup. For example, the CLI removes comment lines by default, while Git's default cleanup for
+`-m` and `-F` commits retains them; Git may also remove whitespace that the CLI checks. See the
+[message filtering details](docs/cli.md#message-filtering) before relying on either behavior.
+
+By default, recognized generated messages—including merge, revert, and autosquash subjects—are
+ignored in full, even with `--strict`. Matching is based on text, so a manually written message can
+also be ignored. See [ignored messages](docs/configuration.md#ignored-messages) for the patterns and
+limits.
+
 ## Web demo
 
 [Try the web demo](https://sgryjp.github.io/commit-msg-lint/) to check a commit message with an
