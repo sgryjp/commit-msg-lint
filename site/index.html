@@ -45,9 +45,13 @@ function render() {
     result.append(li);
   };
   try {
-    const diagnostics = JSON.parse(lint(message.value, config.value));
-    if (diagnostics.length === 0) add("No problems found.");
-    for (const d of diagnostics) {
+    const { lintDiagnostics, configDiagnostics } = JSON.parse(lint(message.value, config.value));
+    if (configDiagnostics.length > 0) {
+      for (const d of configDiagnostics) add(d.message, "error");
+    } else if (lintDiagnostics.length === 0) {
+      add("No problems found.");
+    }
+    for (const d of lintDiagnostics) {
       add(`${d.line}: ${d.severity}[${d.rule}] ${d.message}`, d.severity);
     }
   } catch (e) {

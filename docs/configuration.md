@@ -46,6 +46,72 @@ the required order. The configuration parser remains authoritative for JSONC gra
 configuration rules. Schema `default` annotations are informational and do not apply defaults;
 the parser applies the built-in defaults for omitted settings.
 
+## Structured configuration diagnostics
+
+The Rust API `Config::parse` returns one `ConfigDiagnostic` on failure. Its `code` is a stable,
+non-exhaustive `ConfigErrorCode`; callers should handle known codes and still display `message` for
+codes added by a later release. `message` is intended for people and may change. A Configuration
+Diagnostic has no severity; all configuration diagnostics are errors.
+
+The JSON representation always includes every field. A missing optional location is `null`, and
+`related` is an empty array when no other location is relevant:
+
+```json
+{
+  "code": "config.unknown-field",
+  "message": "unknown field: unexpected",
+  "range": { "start": 13, "end": 25 },
+  "path": "/unexpected",
+  "related": []
+}
+```
+
+`range` uses UTF-8 byte offsets and a half-open interval `[start, end)` into the original
+configuration text. An empty interval can identify EOF. `path` is a JSON Pointer with the standard
+`~0` and `~1` escapes. The empty string `""` is the root path; `null` means that the path is
+unknown. Missing fields have the path where the field belongs and no range. Each Related
+Information item contains a `message`, optional `range`, and optional `path`; absent values are
+`null`. An implicit built-in default can be identified in a related message without an input range.
+
+The parser returns one deterministic Configuration Diagnostic per invalid input. It rejects JSONC
+syntax errors, duplicate keys (including keys that become equal after escape decoding), unknown
+fields and Rules, type and enum errors, explicit `null`, unsupported versions, invalid values, and
+invalid Rule combinations. The stable codes are:
+
+| Code | Meaning |
+| --- | --- |
+| `config.syntax-error` | Invalid JSONC syntax |
+| `config.duplicate-key` | Duplicate object key |
+| `config.missing-field` | Required field is missing |
+| `config.unknown-field` | Unknown setting field |
+| `config.unknown-rule` | Unknown Rule ID |
+| `config.type-mismatch` | Wrong type or failed integer conversion |
+| `config.null-not-allowed` | Explicit `null` |
+| `config.invalid-enum` | Unknown enum value |
+| `config.unsupported-version` | Unsupported configuration version |
+| `config.out-of-range` | Setting value is outside its allowed range |
+| `config.rule-setting-unsupported` | Rule does not support the supplied setting |
+| `config.rule-settings-conflict` | Conflicting settings on one Rule |
+| `config.thresholds-empty` | Threshold array is empty |
+| `config.threshold-limits-not-increasing` | Threshold limits are not strictly increasing |
+| `config.threshold-severity-decreases` | Threshold severity decreases |
+| `config.empty-types-while-type-enum-enabled` | `types` is empty while `type-enum` is enabled |
+| `config.scope-required-with-empty-allowed-scopes` | Required Scope is combined with empty `allowed-scopes` |
+| `config.scope-enum-without-allowed-scopes` | Enabled `scope-enum` has no `allowed-scopes` setting |
+| `config.empty-header-pattern` | Header pattern is empty |
+| `config.invalid-header-pattern` | Header pattern is not a valid regex-lite expression |
+
+The WebAssembly `lint` function returns a JSON string with separate `lintDiagnostics` and
+`configDiagnostics` arrays. A valid configuration puts Lint Diagnostics in the first array and
+leaves the second empty. An invalid configuration skips linting and returns one Configuration
+Diagnostic in the second array.
+Whitespace-only configuration continues to use built-in defaults. The Web demo displays
+configuration messages as errors and distinguishes warning from error Lint Diagnostics.
+
+The CLI keeps its existing configuration-error presentation and exit behavior:
+`invalid configuration <path>: <message>` on standard error and exit code `2`. Configuration
+Diagnostics do not cover file discovery, file I/O, or UTF-8 reading errors.
+
 ## Finding a configuration file
 
 Use `--config <path>` to select a file explicitly. The path is relative to the current working

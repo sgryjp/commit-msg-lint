@@ -1,5 +1,8 @@
-use commit_msg_lint::{config::Config, lint::lint};
-use serde_json::json;
+use commit_msg_lint::{
+    config::{Config, ConfigDiagnostic},
+    lint::{LintDiagnostic, lint},
+};
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 /// Returns the built-in defaults as plain, pretty-printed JSON.
@@ -8,32 +11,50 @@ pub fn default_config() -> Result<String, String> {
     Config::default_json().map_err(|e| format!("could not serialize default configuration: {e}"))
 }
 
-/// Lints `message` with JSONC `config` (empty means defaults) and returns a JSON array of
-/// `{line, rule, severity, message}` objects.
+/// Lints `message` with JSONC `config` (empty means defaults) and returns a JSON object containing
+/// `lintDiagnostics` and `configDiagnostics` arrays.
 #[wasm_bindgen(js_name = lint)]
 pub fn lint_message(message: &str, config: &str) -> Result<String, String> {
     let config = if config.trim().is_empty() {
         Config::default()
     } else {
-        Config::parse(config).map_err(|e| format!("invalid configuration: {e}"))?
+        match Config::parse(config) {
+            Ok(config) => config,
+            Err(diagnostic) => {
+                return serialize_response(Vec::new(), vec![diagnostic]);
+            }
+        }
     };
-    let diagnostics: Vec<_> = lint(message, &config)
-        .into_iter()
-        .map(|d| {
-            json!({
-                "line": d.line,
-                "rule": d.rule,
-                "severity": d.severity.to_string(),
-                "message": d.message,
-            })
-        })
-        .collect();
-    Ok(serde_json::Value::Array(diagnostics).to_string())
+    serialize_response(lint(message, &config), Vec::new())
+}
+
+#[derive(Serialize)]
+struct LintResponse {
+    #[serde(rename = "lintDiagnostics")]
+    lint_diagnostics: Vec<LintDiagnostic>,
+    #[serde(rename = "configDiagnostics")]
+    config_diagnostics: Vec<ConfigDiagnostic>,
+}
+
+fn serialize_response(
+    lint_diagnostics: Vec<LintDiagnostic>,
+    config_diagnostics: Vec<ConfigDiagnostic>,
+) -> Result<String, String> {
+    serde_json::to_string(&LintResponse {
+        lint_diagnostics,
+        config_diagnostics,
+    })
+    .map_err(|error| format!("could not serialize diagnostics: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn response(message: &str, config: &str) -> serde_json::Value {
+        serde_json::from_str(&lint_message(message, config).unwrap()).unwrap()
+    }
 
     #[test]
     fn default_configuration_exposes_ignore_settings() {
@@ -54,8 +75,12 @@ mod tests {
             "Merge branch x",
             "Revert x",
         ] {
-            let result = lint_message(&format!("{header}{body}"), "").unwrap();
-            assert_eq!(result, "[]", "{header}");
+            let result = response(&format!("{header}{body}"), "");
+            assert_eq!(
+                result,
+                json!({"lintDiagnostics": [], "configDiagnostics": []}),
+                "{header}"
+            );
         }
     }
 
@@ -67,8 +92,7 @@ mod tests {
             ("autosquash", "fixup! x"),
         ] {
             let config = format!(r#"{{"version":1,"ignore":{{"{group}":false}}}}"#);
-            let diagnostics: serde_json::Value =
-                serde_json::from_str(&lint_message(header, &config).unwrap()).unwrap();
+            let diagnostics = response(header, &config)["lintDiagnostics"].clone();
             assert!(
                 diagnostics
                     .as_array()
@@ -82,7 +106,10 @@ mod tests {
             } else {
                 "Merge branch x"
             };
-            assert_eq!(lint_message(other_header, &config).unwrap(), "[]");
+            assert_eq!(
+                response(other_header, &config),
+                json!({"lintDiagnostics": [], "configDiagnostics": []})
+            );
         }
     }
 
@@ -96,11 +123,14 @@ mod tests {
             }
         }"#;
         for message in ["custom: invalid\n\n\u{0001}", "bad 日本語 message"] {
-            assert_eq!(lint_message(message, config).unwrap(), "[]", "{message}");
+            assert_eq!(
+                response(message, config),
+                json!({"lintDiagnostics": [], "configDiagnostics": []}),
+                "{message}"
+            );
         }
         for message in ["bad header", "bad header\n\n日本語"] {
-            let diagnostics: serde_json::Value =
-                serde_json::from_str(&lint_message(message, config).unwrap()).unwrap();
+            let diagnostics = response(message, config)["lintDiagnostics"].clone();
             assert!(
                 diagnostics
                     .as_array()
@@ -118,8 +148,7 @@ mod tests {
             "bad header\n\nMerge branch feature",
             "revert: subject.",
         ] {
-            let diagnostics: serde_json::Value =
-                serde_json::from_str(&lint_message(message, "").unwrap()).unwrap();
+            let diagnostics = response(message, "")["lintDiagnostics"].clone();
             assert!(!diagnostics.as_array().unwrap().is_empty(), "{message}");
         }
     }
@@ -131,23 +160,67 @@ mod tests {
             r#"{"version":1,"ignore":{"header-patterns":[""]}}"#,
             r#"{"version":1,"ignore":{"header-patterns":["["]}}"#,
         ] {
-            let error = lint_message("fixup! invalid", config).unwrap_err();
-            assert!(
-                error.starts_with("invalid configuration:"),
-                "{config}: {error}"
-            );
+            let result = response("fixup! invalid", config);
+            assert!(result["lintDiagnostics"].as_array().unwrap().is_empty());
+            assert_eq!(result["configDiagnostics"].as_array().unwrap().len(), 1);
+            let diagnostic = &result["configDiagnostics"][0];
+            for field in ["code", "message", "range", "path", "related"] {
+                assert!(diagnostic.get(field).is_some(), "{config}: missing {field}");
+            }
         }
     }
 
     #[test]
     fn reports_diagnostics_as_json() {
-        let json = lint_message("unknown: x", "").unwrap();
-        assert!(json.contains("\"rule\":\"type-enum\""));
+        let result = response("unknown: x", "");
+        assert!(
+            result["lintDiagnostics"]
+                .to_string()
+                .contains("\"rule\":\"type-enum\"")
+        );
+        assert!(result["configDiagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+
+        let error = response("feat: x", r#"{"version":1,"unknown":true}"#);
+        let diagnostic = &error["configDiagnostics"][0];
+        assert_eq!(diagnostic["code"], "config.unknown-field");
+        assert_eq!(diagnostic["path"], "/unknown");
+        assert!(diagnostic["range"]["start"].is_number());
+        assert_eq!(diagnostic["related"], json!([]));
+    }
+
+    #[test]
+    fn lint_severity_stays_separate_from_configuration_errors() {
+        let warning = response(
+            "bad header",
+            r#"{"version":1,"rules":{"header-format":{"severity":"warning"}}}"#,
+        );
+        assert!(
+            warning["lintDiagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| { d["rule"] == "header-format" && d["severity"] == "warning" })
+        );
+        assert!(warning["configDiagnostics"].as_array().unwrap().is_empty());
+
+        let invalid = response("bad header", r#"{"version":1,"unknown":true}"#);
+        assert!(invalid["lintDiagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(
+            invalid["configDiagnostics"][0]["code"],
+            "config.unknown-field"
+        );
+        assert!(invalid["configDiagnostics"][0].get("severity").is_none());
     }
 
     #[test]
     fn default_configuration_json_produces_the_same_diagnostics_as_empty_configuration() {
         let defaults = default_config().unwrap();
+        let whitespace = response("feat: example", " \n\t");
+        let empty = response("feat: example", "");
+        assert_eq!(whitespace["lintDiagnostics"], empty["lintDiagnostics"]);
+        assert_eq!(whitespace["configDiagnostics"], json!([]));
+        assert_eq!(empty["configDiagnostics"], json!([]));
         for message in [
             "feat: example",
             "unknown: x",
@@ -164,8 +237,12 @@ mod tests {
             "version": 1,
             "conventional": { "types": ["fix",], },
         }"#;
-        let result = lint_message("feat: x", config).unwrap();
-        assert!(result.contains("\"rule\":\"type-enum\""));
+        let result = response("feat: x", config);
+        assert!(
+            result["lintDiagnostics"]
+                .to_string()
+                .contains("\"rule\":\"type-enum\"")
+        );
     }
 
     #[test]
@@ -177,7 +254,9 @@ mod tests {
             ),
             lint_message("feat: x", r#"{"version":1}"#)
         );
-        assert!(lint_message("feat: x", r#"{"version":1,"$schema":null}"#).is_err());
+        let invalid = response("feat: x", r#"{"version":1,"$schema":null}"#);
+        assert_eq!(invalid["configDiagnostics"].as_array().unwrap().len(), 1);
+        assert!(invalid["lintDiagnostics"].as_array().unwrap().is_empty());
     }
 
     #[test]
@@ -187,9 +266,15 @@ mod tests {
             r#"{"version":1,"conventional":{"types":null}}"#,
             r#"{"version":1,"rules":{"type-case":{},"type-case":{}}}"#,
         ] {
+            let result = response("feat: x", config);
+            assert_eq!(
+                result["configDiagnostics"].as_array().unwrap().len(),
+                1,
+                "{config}"
+            );
             assert!(
-                lint_message("feat: x", config).is_err(),
-                "accepted {config}"
+                result["lintDiagnostics"].as_array().unwrap().is_empty(),
+                "{config}"
             );
         }
     }

@@ -1,0 +1,734 @@
+use std::collections::{BTreeMap, HashMap};
+
+use jsonc_parser::ast::{Object, ObjectProp, Value};
+use jsonc_parser::common::Ranged;
+use jsonc_parser::{CollectOptions, parse_to_ast};
+
+use super::{
+    Config, ConfigDiagnostic, ConfigErrorCode, ConfigFile, ConfigRange, ConfigRelatedInformation,
+    Conventional, DisplayWidth, HeaderPattern, Ignore, JSONC_OPTIONS, RULE_METADATA, RuleOverride,
+    Severity, Threshold,
+};
+
+struct SourceLocation {
+    range: Option<ConfigRange>,
+    path: Option<String>,
+}
+
+fn config_range(range: jsonc_parser::common::Range) -> ConfigRange {
+    ConfigRange {
+        start: range.start,
+        end: range.end,
+    }
+}
+
+impl SourceLocation {
+    fn at(range: jsonc_parser::common::Range, path: impl Into<String>) -> Self {
+        Self {
+            range: Some(config_range(range)),
+            path: Some(path.into()),
+        }
+    }
+
+    fn syntax_range(range: jsonc_parser::common::Range) -> Self {
+        Self {
+            range: Some(config_range(range)),
+            path: None,
+        }
+    }
+
+    fn missing_field(path: impl Into<String>) -> Self {
+        Self {
+            range: None,
+            path: Some(path.into()),
+        }
+    }
+
+    fn defaulted() -> Self {
+        Self {
+            range: None,
+            path: None,
+        }
+    }
+}
+
+impl ConfigRelatedInformation {
+    fn new(message: impl Into<String>, location: SourceLocation) -> Self {
+        Self {
+            message: message.into(),
+            range: location.range,
+            path: location.path,
+        }
+    }
+}
+
+impl ConfigDiagnostic {
+    fn new(code: ConfigErrorCode, message: impl Into<String>, location: SourceLocation) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            range: location.range,
+            path: location.path,
+            related: Vec::new(),
+        }
+    }
+
+    fn with_related(mut self, related: ConfigRelatedInformation) -> Self {
+        self.related.push(related);
+        self
+    }
+}
+
+impl Config {
+    /// Parses JSONC configuration and returns its first structured diagnostic on failure.
+    pub fn parse(input: &str) -> Result<Self, ConfigDiagnostic> {
+        let parsed =
+            parse_to_ast(input, &CollectOptions::default(), &JSONC_OPTIONS).map_err(|error| {
+                ConfigDiagnostic::new(
+                    ConfigErrorCode::SyntaxError,
+                    error.to_string(),
+                    SourceLocation::syntax_range(error.range()),
+                )
+            })?;
+        let Some(value) = parsed.value else {
+            let end = input.len();
+            return Err(ConfigDiagnostic::new(
+                ConfigErrorCode::SyntaxError,
+                "expected a JSONC value",
+                SourceLocation {
+                    range: Some(ConfigRange { start: end, end }),
+                    path: None,
+                },
+            ));
+        };
+
+        validate_tree(&value, "")?;
+        let root = expect_object(&value, "")?;
+        let raw = parse_config_file(root)?;
+        build_config(raw, root)
+    }
+}
+
+fn validate_tree(value: &Value<'_>, path: &str) -> Result<(), ConfigDiagnostic> {
+    match value {
+        Value::Object(object) => {
+            let mut seen = HashMap::<String, jsonc_parser::common::Range>::new();
+            for property in &object.properties {
+                let key = property.name.as_str();
+                let property_path = join_path(path, key);
+                let key_range = property.name.range();
+                if let Some(previous_range) = seen.get(key) {
+                    return Err(ConfigDiagnostic::new(
+                        ConfigErrorCode::DuplicateKey,
+                        format!("duplicate key: {key}"),
+                        SourceLocation::at(key_range, property_path.clone()),
+                    )
+                    .with_related(ConfigRelatedInformation::new(
+                        format!("first occurrence of key: {key}"),
+                        SourceLocation::at(*previous_range, property_path),
+                    )));
+                }
+                seen.insert(key.to_owned(), key_range);
+                validate_tree(&property.value, &join_path(path, key))?;
+            }
+            Ok(())
+        }
+        Value::Array(array) => {
+            for (index, element) in array.elements.iter().enumerate() {
+                validate_tree(element, &join_path(path, &index.to_string()))?;
+            }
+            Ok(())
+        }
+        Value::NullKeyword(null) => Err(ConfigDiagnostic::new(
+            ConfigErrorCode::NullNotAllowed,
+            "null is not allowed; omit the field to use its default",
+            SourceLocation::at(null.range, path),
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn parse_config_file(root: &Object<'_>) -> Result<ConfigFile, ConfigDiagnostic> {
+    check_known_fields(
+        root,
+        "",
+        &[
+            "$schema",
+            "version",
+            "conventional",
+            "display-width",
+            "ignore",
+            "rules",
+        ],
+    )?;
+
+    let version = root
+        .get("version")
+        .ok_or_else(|| missing_field("version", "/version"))?;
+    let version = expect_unsigned(&version.value, "/version")?;
+    let schema = root
+        .get("$schema")
+        .map(|property| expect_string(&property.value, "/$schema").map(str::to_owned))
+        .transpose()?;
+    let conventional = parse_conventional(root.get("conventional"))?;
+    let display_width = parse_display_width(root.get("display-width"))?;
+    let ignore = parse_ignore(root.get("ignore"))?;
+    let rules = parse_rules(root.get("rules"))?;
+
+    Ok(ConfigFile {
+        schema,
+        version,
+        conventional,
+        display_width,
+        ignore,
+        rules,
+    })
+}
+
+fn parse_conventional(
+    property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
+) -> Result<Conventional, ConfigDiagnostic> {
+    let path = "/conventional";
+    let Some(object) = optional_object(property, path)? else {
+        return Ok(Conventional::default());
+    };
+    check_known_fields(object, path, &["types", "scope-required", "allowed-scopes"])?;
+    let types = object
+        .get("types")
+        .map(|property| parse_string_array(&property.value, "/conventional/types"))
+        .transpose()?;
+    let scope_required = object
+        .get("scope-required")
+        .map(|property| expect_boolean(&property.value, "/conventional/scope-required"))
+        .transpose()?
+        .unwrap_or_default();
+    let allowed_scopes = object
+        .get("allowed-scopes")
+        .map(|property| parse_string_array(&property.value, "/conventional/allowed-scopes"))
+        .transpose()?;
+    Ok(Conventional {
+        types,
+        scope_required,
+        allowed_scopes,
+    })
+}
+
+fn parse_display_width(
+    property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
+) -> Result<DisplayWidth, ConfigDiagnostic> {
+    let path = "/display-width";
+    let Some(object) = optional_object(property, path)? else {
+        return Ok(DisplayWidth::default());
+    };
+    check_known_fields(object, path, &["ambiguous-width"])?;
+    let ambiguous_width = object
+        .get("ambiguous-width")
+        .map(|property| expect_usize(&property.value, "/display-width/ambiguous-width"))
+        .transpose()?;
+    Ok(DisplayWidth { ambiguous_width })
+}
+
+fn parse_ignore(
+    property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
+) -> Result<Ignore, ConfigDiagnostic> {
+    let path = "/ignore";
+    let Some(object) = optional_object(property, path)? else {
+        return Ok(Ignore::default());
+    };
+    check_known_fields(
+        object,
+        path,
+        &["merge", "revert", "autosquash", "header-patterns"],
+    )?;
+    let mut ignore = Ignore::default();
+    for (key, target) in [
+        ("merge", &mut ignore.merge),
+        ("revert", &mut ignore.revert),
+        ("autosquash", &mut ignore.autosquash),
+    ] {
+        if let Some(property) = object.get(key) {
+            *target = expect_boolean(&property.value, &join_path(path, key))?;
+        }
+    }
+    if let Some(property) = object.get("header-patterns") {
+        let patterns_path = "/ignore/header-patterns";
+        let array = expect_array(&property.value, patterns_path)?;
+        let mut patterns = Vec::with_capacity(array.elements.len());
+        for (index, value) in array.elements.iter().enumerate() {
+            let item_path = join_path(patterns_path, &index.to_string());
+            let source = expect_string(value, &item_path)?;
+            if source.is_empty() {
+                return Err(ConfigDiagnostic::new(
+                    ConfigErrorCode::EmptyHeaderPattern,
+                    "ignore header-patterns must not contain an empty pattern",
+                    SourceLocation::at(value.range(), item_path),
+                ));
+            }
+            let pattern = HeaderPattern::new(source).map_err(|message| {
+                ConfigDiagnostic::new(
+                    ConfigErrorCode::InvalidHeaderPattern,
+                    message,
+                    SourceLocation::at(value.range(), item_path),
+                )
+            })?;
+            patterns.push(pattern);
+        }
+        ignore.header_patterns = patterns;
+    }
+    Ok(ignore)
+}
+
+fn parse_rules(
+    property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
+) -> Result<BTreeMap<String, RuleOverride>, ConfigDiagnostic> {
+    let path = "/rules";
+    let Some(object) = optional_object(property, path)? else {
+        return Ok(BTreeMap::new());
+    };
+    let mut rules = BTreeMap::new();
+    for property in &object.properties {
+        let id = property.name.as_str();
+        let rule_path = join_path(path, id);
+        if !RULE_METADATA.iter().any(|metadata| metadata.id == id) {
+            return Err(ConfigDiagnostic::new(
+                ConfigErrorCode::UnknownRule,
+                format!("unknown rule: {id}"),
+                SourceLocation::at(property.name.range(), rule_path),
+            ));
+        }
+        let object = expect_object(&property.value, &rule_path)?;
+        check_known_fields(object, &rule_path, &["enabled", "severity", "thresholds"])?;
+        let enabled = object
+            .get("enabled")
+            .map(|property| expect_boolean(&property.value, &join_path(&rule_path, "enabled")))
+            .transpose()?;
+        let severity = object
+            .get("severity")
+            .map(|property| parse_severity(&property.value, &join_path(&rule_path, "severity")))
+            .transpose()?;
+        let thresholds = object
+            .get("thresholds")
+            .map(|property| parse_thresholds(&property.value, &join_path(&rule_path, "thresholds")))
+            .transpose()?;
+        rules.insert(
+            id.to_owned(),
+            RuleOverride {
+                enabled,
+                severity,
+                thresholds,
+            },
+        );
+    }
+    Ok(rules)
+}
+
+fn parse_thresholds(value: &Value<'_>, path: &str) -> Result<Vec<Threshold>, ConfigDiagnostic> {
+    let array = expect_array(value, path)?;
+    array
+        .elements
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let item_path = join_path(path, &index.to_string());
+            let object = expect_object(value, &item_path)?;
+            check_known_fields(object, &item_path, &["limit", "severity"])?;
+            let limit = object
+                .get("limit")
+                .ok_or_else(|| missing_field("limit", &join_path(&item_path, "limit")))?;
+            let severity = object
+                .get("severity")
+                .ok_or_else(|| missing_field("severity", &join_path(&item_path, "severity")))?;
+            Ok(Threshold {
+                limit: expect_usize(&limit.value, &join_path(&item_path, "limit"))?,
+                severity: parse_severity(&severity.value, &join_path(&item_path, "severity"))?,
+            })
+        })
+        .collect()
+}
+
+fn build_config(raw: ConfigFile, root: &Object<'_>) -> Result<Config, ConfigDiagnostic> {
+    if raw.version != 1 {
+        return Err(ConfigDiagnostic::new(
+            ConfigErrorCode::UnsupportedVersion,
+            format!("unsupported configuration version: {}", raw.version),
+            location_at(root, &["version"]).expect("parsed config has a version location"),
+        ));
+    }
+
+    let conventional_scope_required = raw.conventional.scope_required;
+    let mut config = Config {
+        ignore: raw.ignore,
+        ..Config::default()
+    };
+    if let Some(types) = raw.conventional.types {
+        config.types = types;
+    }
+
+    config.rules.get_mut("scope-required").unwrap().enabled = conventional_scope_required;
+    if let Some(scopes) = raw.conventional.allowed_scopes {
+        config.rules.get_mut("scope-enum").unwrap().enabled = true;
+        config.allowed_scopes = Some(scopes);
+    }
+    if let Some(width) = raw.display_width.ambiguous_width {
+        if !matches!(width, 1 | 2) {
+            let location = location_at(root, &["display-width", "ambiguous-width"])
+                .expect("parsed ambiguous-width has a source location");
+            return Err(ConfigDiagnostic::new(
+                ConfigErrorCode::OutOfRange,
+                "ambiguous-width must be 1 or 2",
+                location,
+            ));
+        }
+        config.ambiguous_width = width;
+    }
+
+    apply_rule_overrides(&mut config, raw.rules, root)?;
+    validate_cross_settings(&config, conventional_scope_required, root)?;
+    Ok(config)
+}
+
+fn apply_rule_overrides(
+    config: &mut Config,
+    overrides: BTreeMap<String, RuleOverride>,
+    root: &Object<'_>,
+) -> Result<(), ConfigDiagnostic> {
+    for (id, override_rule) in overrides {
+        let metadata = RULE_METADATA
+            .iter()
+            .find(|metadata| metadata.id == id)
+            .expect("parsed Rule IDs are known");
+        let path = join_path("/rules", &id);
+        let source = property_at(root, &["rules", id.as_str()])
+            .and_then(|property| property.value.as_object())
+            .expect("parsed Rule settings have source locations");
+        let rule = config.rules.get_mut(&id).unwrap();
+        if let Some(enabled) = override_rule.enabled {
+            rule.enabled = enabled;
+        }
+        if let Some(severity) = override_rule.severity {
+            if !metadata.kind.supports_severity() {
+                let property = source.get("severity").unwrap();
+                return Err(ConfigDiagnostic::new(
+                    ConfigErrorCode::RuleSettingUnsupported,
+                    format!("{id} uses thresholds, not severity"),
+                    SourceLocation::at(property.value.range(), join_path(&path, "severity")),
+                ));
+            }
+            rule.severity = severity;
+            for threshold in &mut rule.thresholds {
+                threshold.severity = severity;
+            }
+        }
+        if let Some(thresholds) = override_rule.thresholds {
+            let thresholds_property = source
+                .get("thresholds")
+                .expect("parsed threshold settings have source locations");
+            if !metadata.kind.supports_thresholds() {
+                return Err(ConfigDiagnostic::new(
+                    ConfigErrorCode::RuleSettingUnsupported,
+                    format!("{id} does not support thresholds"),
+                    SourceLocation::at(
+                        thresholds_property.value.range(),
+                        join_path(&path, "thresholds"),
+                    ),
+                ));
+            }
+            if override_rule.severity.is_some() {
+                let severity_property = source
+                    .get("severity")
+                    .expect("parsed severity settings have source locations");
+                return Err(ConfigDiagnostic::new(
+                    ConfigErrorCode::RuleSettingsConflict,
+                    format!("{id} cannot specify both severity and thresholds"),
+                    SourceLocation::at(
+                        thresholds_property.value.range(),
+                        join_path(&path, "thresholds"),
+                    ),
+                )
+                .with_related(ConfigRelatedInformation::new(
+                    "severity is also specified here",
+                    SourceLocation::at(
+                        severity_property.value.range(),
+                        join_path(&path, "severity"),
+                    ),
+                )));
+            }
+            if thresholds.is_empty() {
+                return Err(ConfigDiagnostic::new(
+                    ConfigErrorCode::ThresholdsEmpty,
+                    format!("{id} thresholds must not be empty"),
+                    SourceLocation::at(
+                        thresholds_property.value.range(),
+                        join_path(&path, "thresholds"),
+                    ),
+                ));
+            }
+            let threshold_array = thresholds_property
+                .value
+                .as_array()
+                .expect("parsed threshold settings are an array");
+            let thresholds_path = join_path(&path, "thresholds");
+            for (index, pair) in thresholds.windows(2).enumerate() {
+                let earlier_path = join_path(&thresholds_path, &index.to_string());
+                let later_path = join_path(&thresholds_path, &(index + 1).to_string());
+                let earlier = threshold_array.elements[index]
+                    .as_object()
+                    .expect("parsed threshold entries have source locations");
+                let later = threshold_array.elements[index + 1]
+                    .as_object()
+                    .expect("parsed threshold entries have source locations");
+                if pair[0].limit >= pair[1].limit {
+                    return Err(ConfigDiagnostic::new(
+                        ConfigErrorCode::ThresholdLimitsNotIncreasing,
+                        format!("{id} threshold limits must be strictly increasing"),
+                        field_location(later, "limit", &later_path),
+                    )
+                    .with_related(ConfigRelatedInformation::new(
+                        "previous threshold limit",
+                        field_location(earlier, "limit", &earlier_path),
+                    )));
+                }
+                if pair[0].severity > pair[1].severity {
+                    return Err(ConfigDiagnostic::new(
+                        ConfigErrorCode::ThresholdSeverityDecreases,
+                        format!("{id} threshold severity must not decrease"),
+                        field_location(later, "severity", &later_path),
+                    )
+                    .with_related(ConfigRelatedInformation::new(
+                        "previous threshold severity",
+                        field_location(earlier, "severity", &earlier_path),
+                    )));
+                }
+            }
+            rule.thresholds = thresholds;
+        }
+    }
+    Ok(())
+}
+
+fn validate_cross_settings(
+    config: &Config,
+    conventional_scope_required: bool,
+    root: &Object<'_>,
+) -> Result<(), ConfigDiagnostic> {
+    if config.rules["type-enum"].enabled && config.types.is_empty() {
+        let types_location = location_at(root, &["conventional", "types"])
+            .expect("empty types must be explicitly configured");
+        let type_enum_enabled = location_at(root, &["rules", "type-enum", "enabled"]);
+        let related = match type_enum_enabled {
+            Some(location) => ConfigRelatedInformation::new("type-enum is enabled here", location),
+            None => ConfigRelatedInformation::new(
+                "type-enum is enabled by default",
+                SourceLocation::defaulted(),
+            ),
+        };
+        return Err(ConfigDiagnostic::new(
+            ConfigErrorCode::EmptyTypesWhileTypeEnumEnabled,
+            "types must not be empty when type-enum is enabled",
+            types_location,
+        )
+        .with_related(related));
+    }
+
+    if conventional_scope_required && config.allowed_scopes.as_ref().is_some_and(Vec::is_empty) {
+        let scopes_location = location_at(root, &["conventional", "allowed-scopes"])
+            .expect("empty allowed-scopes must be explicitly configured");
+        let scope_required_location = location_at(root, &["conventional", "scope-required"])
+            .expect("scope-required true must be explicitly configured");
+        return Err(ConfigDiagnostic::new(
+            ConfigErrorCode::ScopeRequiredWithEmptyAllowedScopes,
+            "scope-required cannot be combined with empty allowed-scopes",
+            scopes_location,
+        )
+        .with_related(ConfigRelatedInformation::new(
+            "scope-required is enabled here",
+            scope_required_location,
+        )));
+    }
+
+    if config.rules["scope-enum"].enabled && config.allowed_scopes.is_none() {
+        let scope_enum_enabled = location_at(root, &["rules", "scope-enum", "enabled"])
+            .expect("scope-enum cannot be enabled without an explicit override");
+        return Err(ConfigDiagnostic::new(
+            ConfigErrorCode::ScopeEnumWithoutAllowedScopes,
+            "scope-enum requires allowed-scopes",
+            SourceLocation::missing_field(pointer(&["conventional", "allowed-scopes"])),
+        )
+        .with_related(ConfigRelatedInformation::new(
+            "scope-enum is enabled here",
+            scope_enum_enabled,
+        )));
+    }
+
+    Ok(())
+}
+
+fn optional_object<'node, 'text>(
+    property: Option<&'node ObjectProp<'text>>,
+    path: &str,
+) -> Result<Option<&'node Object<'text>>, ConfigDiagnostic> {
+    property
+        .map(|property| expect_object(&property.value, path))
+        .transpose()
+}
+
+fn expect_object<'node, 'text>(
+    value: &'node Value<'text>,
+    path: &str,
+) -> Result<&'node Object<'text>, ConfigDiagnostic> {
+    value
+        .as_object()
+        .ok_or_else(|| type_mismatch(value, path, "an object"))
+}
+
+fn expect_array<'node, 'text>(
+    value: &'node Value<'text>,
+    path: &str,
+) -> Result<&'node jsonc_parser::ast::Array<'text>, ConfigDiagnostic> {
+    value
+        .as_array()
+        .ok_or_else(|| type_mismatch(value, path, "an array"))
+}
+
+fn expect_string<'a>(value: &'a Value<'_>, path: &str) -> Result<&'a str, ConfigDiagnostic> {
+    value
+        .as_string_lit()
+        .map(|literal| literal.value.as_ref())
+        .ok_or_else(|| type_mismatch(value, path, "a string"))
+}
+
+fn expect_boolean(value: &Value<'_>, path: &str) -> Result<bool, ConfigDiagnostic> {
+    value
+        .as_boolean_lit()
+        .map(|literal| literal.value)
+        .ok_or_else(|| type_mismatch(value, path, "a boolean"))
+}
+
+fn expect_unsigned(value: &Value<'_>, path: &str) -> Result<u64, ConfigDiagnostic> {
+    let Some(number) = value.as_number_lit() else {
+        return Err(type_mismatch(value, path, "an unsigned integer"));
+    };
+    let parsed = if number.value == "-0" {
+        Some(0)
+    } else if number.value.starts_with('-') {
+        None
+    } else {
+        number.value.parse::<u64>().ok()
+    };
+    match parsed {
+        Some(number) => Ok(number),
+        None => Err(unsigned_integer_conversion_failed(value, path)),
+    }
+}
+
+fn expect_usize(value: &Value<'_>, path: &str) -> Result<usize, ConfigDiagnostic> {
+    let number = expect_unsigned(value, path)?;
+    usize::try_from(number).map_err(|_| unsigned_integer_conversion_failed(value, path))
+}
+
+fn unsigned_integer_conversion_failed(value: &Value<'_>, path: &str) -> ConfigDiagnostic {
+    ConfigDiagnostic::new(
+        ConfigErrorCode::TypeMismatch,
+        "expected an unsigned integer in range",
+        SourceLocation::at(value.range(), path),
+    )
+}
+
+fn parse_string_array(value: &Value<'_>, path: &str) -> Result<Vec<String>, ConfigDiagnostic> {
+    let array = expect_array(value, path)?;
+    array
+        .elements
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            expect_string(value, &join_path(path, &index.to_string())).map(str::to_owned)
+        })
+        .collect()
+}
+
+fn parse_severity(value: &Value<'_>, path: &str) -> Result<Severity, ConfigDiagnostic> {
+    match expect_string(value, path)? {
+        "warning" => Ok(Severity::Warning),
+        "error" => Ok(Severity::Error),
+        name => Err(ConfigDiagnostic::new(
+            ConfigErrorCode::InvalidEnum,
+            format!("invalid severity: {name}"),
+            SourceLocation::at(value.range(), path),
+        )),
+    }
+}
+
+fn check_known_fields(
+    object: &Object<'_>,
+    path: &str,
+    allowed: &[&str],
+) -> Result<(), ConfigDiagnostic> {
+    for property in &object.properties {
+        let key = property.name.as_str();
+        if !allowed.contains(&key) {
+            return Err(ConfigDiagnostic::new(
+                ConfigErrorCode::UnknownField,
+                format!("unknown field: {key}"),
+                SourceLocation::at(property.name.range(), join_path(path, key)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn field_location(object: &Object<'_>, field: &str, parent_path: &str) -> SourceLocation {
+    let property = object
+        .get(field)
+        .expect("parsed field has a source location");
+    SourceLocation::at(property.value.range(), join_path(parent_path, field))
+}
+
+fn location_at(root: &Object<'_>, components: &[&str]) -> Option<SourceLocation> {
+    let property = property_at(root, components)?;
+    Some(SourceLocation::at(
+        property.value.range(),
+        pointer(components),
+    ))
+}
+
+fn pointer(components: &[&str]) -> String {
+    components
+        .iter()
+        .fold(String::new(), |path, component| join_path(&path, component))
+}
+
+fn property_at<'node, 'text>(
+    root: &'node Object<'text>,
+    components: &[&str],
+) -> Option<&'node ObjectProp<'text>> {
+    let mut object = root;
+    for (index, component) in components.iter().enumerate() {
+        let property = object.get(component)?;
+        if index + 1 == components.len() {
+            return Some(property);
+        }
+        object = property.value.as_object()?;
+    }
+    None
+}
+
+fn missing_field(name: &str, path: &str) -> ConfigDiagnostic {
+    ConfigDiagnostic::new(
+        ConfigErrorCode::MissingField,
+        format!("missing field: {name}"),
+        SourceLocation::missing_field(path),
+    )
+}
+
+fn type_mismatch(value: &Value<'_>, path: &str, expected: &str) -> ConfigDiagnostic {
+    ConfigDiagnostic::new(
+        ConfigErrorCode::TypeMismatch,
+        format!("expected {expected}"),
+        SourceLocation::at(value.range(), path),
+    )
+}
+
+fn join_path(parent: &str, component: &str) -> String {
+    let escaped = component.replace('~', "~0").replace('/', "~1");
+    format!("{parent}/{escaped}")
+}

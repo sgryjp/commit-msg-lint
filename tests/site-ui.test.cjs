@@ -44,10 +44,16 @@ async function setup() {
   };
   const lint = (message, config) => {
     calls.push([message, config]);
-    if (config === "invalid") throw new Error("invalid configuration");
-    return JSON.stringify(config === "custom" ? [
-      { line: 1, severity: "warning", rule: "example", message: "custom diagnostic" },
-    ] : []);
+    if (config === "invalid") return JSON.stringify({
+      lintDiagnostics: [],
+      configDiagnostics: [{ code: "config.unknown-field", message: "unknown field: extra" }],
+    });
+    return JSON.stringify({
+      lintDiagnostics: config === "custom" ? [
+        { line: 1, severity: "warning", rule: "example", message: "custom diagnostic" },
+      ] : [],
+      configDiagnostics: [],
+    });
   };
   const document = {
     getElementById: (id) => elements[id],
@@ -88,12 +94,14 @@ test("edits and empty configuration are linted, and reset preserves the message"
   elements.config.value = "custom";
   elements.config.dispatch("input");
   assert.equal(elements.result.children[0].textContent, "1: warning[example] custom diagnostic");
+  assert.equal(elements.result.children[0].className, "warning");
   elements.config.value = "";
   elements.config.dispatch("input");
   assert.deepEqual(calls.at(-1), ["fix: keep my message", ""]);
   elements.config.value = "invalid";
   elements.config.dispatch("input");
-  assert.match(elements.result.children[0].textContent, /invalid configuration/);
+  assert.match(elements.result.children[0].textContent, /unknown field: extra/);
+  assert.equal(elements.result.children[0].className, "error");
   elements["reset-config"].dispatch("click");
   assert.equal(elements.config.value, defaults);
   assert.equal(elements.message.value, "fix: keep my message");
