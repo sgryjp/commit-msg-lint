@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Structured configuration diagnostic codes, byte ranges, JSON Pointer paths, and related locations.
+
+### Changed
+
+- The Rust `Config::parse` error type and WebAssembly `lint` JSON response are breaking API
+  changes; the CLI error format and exit code remain unchanged.
+
 ## [0.0.2] - 2026-11-18
 
 ### Added

@@ -843,6 +843,15 @@ fn invalid_jsonc_configuration_is_a_cli_error() {
 }
 
 #[test]
+fn syntax_configuration_diagnostics_remain_cli_errors_with_exit_code_two() {
+    let dir = TestDir::new();
+    fs::write(dir.0.join("invalid.jsonc"), r#"{"version":1"#).unwrap();
+    let output = dir.command(&["--config", "invalid.jsonc"], b"feat: change\n");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("invalid configuration invalid.jsonc:"));
+}
+
+#[test]
 fn structured_configuration_errors_keep_the_cli_message_prefix_and_exit_code() {
     let dir = TestDir::new();
     fs::write(

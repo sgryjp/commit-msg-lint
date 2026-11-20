@@ -51,7 +51,8 @@ the parser applies the built-in defaults for omitted settings.
 The Rust API `Config::parse` returns one `ConfigDiagnostic` on failure. Its `code` is a stable,
 non-exhaustive `ConfigErrorCode`; callers should handle known codes and still display `message` for
 codes added by a later release. `message` is intended for people and may change. A diagnostic has no
-severity because every configuration diagnostic is an error.
+severity because every configuration diagnostic is an error. This is a breaking Rust API change:
+the previous error type was `String`.
 
 The JSON representation always includes every field. A missing optional location is `null`, and
 `related` is an empty array when no other location is relevant:
@@ -102,11 +103,11 @@ combinations. The stable codes are:
 | `config.invalid-header-pattern` | Header pattern is not a valid regex-lite expression |
 
 The WebAssembly `lint` function returns a JSON string with separate `lintDiagnostics` and
-`configDiagnostics` arrays. A valid configuration puts lint results in the first array and leaves
-the second empty. An invalid configuration skips linting and returns one configuration diagnostic
-in the second array. Whitespace-only configuration continues to use built-in defaults. The Web
-demo displays configuration messages as errors and continues to distinguish lint warnings from
-lint errors.
+`configDiagnostics` arrays. This is a breaking change from its previous JSON-array response. A valid
+configuration puts lint results in the first array and leaves the second empty. An invalid
+configuration skips linting and returns one configuration diagnostic in the second array.
+Whitespace-only configuration continues to use built-in defaults. The Web demo displays
+configuration messages as errors and continues to distinguish lint warnings from lint errors.
 
 The CLI keeps its existing configuration-error presentation and exit behavior:
 `invalid configuration <path>: <message>` on standard error and exit code `2`. Configuration
