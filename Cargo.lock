@@ -200,6 +200,7 @@ name = "commit-msg-lint-web"
 version = "0.0.2"
 dependencies = [
  "commit-msg-lint",
+ "serde",
  "serde_json",
  "wasm-bindgen",
 ]

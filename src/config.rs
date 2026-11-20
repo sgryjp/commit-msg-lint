@@ -4,11 +4,94 @@ use std::fmt;
 use jsonc_parser::ParseOptions;
 use serde::{Deserialize, Serialize};
 
-mod diagnostics;
-pub use diagnostics::{ConfigDiagnostic, ConfigErrorCode, ConfigRange, ConfigRelatedInformation};
+mod parser;
 
 pub const CONFIG_SCHEMA_URL: &str =
     "https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct ConfigRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl From<jsonc_parser::common::Range> for ConfigRange {
+    fn from(range: jsonc_parser::common::Range) -> Self {
+        Self {
+            start: range.start,
+            end: range.end,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[non_exhaustive]
+pub enum ConfigErrorCode {
+    #[serde(rename = "config.syntax-error")]
+    SyntaxError,
+    #[serde(rename = "config.duplicate-key")]
+    DuplicateKey,
+    #[serde(rename = "config.missing-field")]
+    MissingField,
+    #[serde(rename = "config.unknown-field")]
+    UnknownField,
+    #[serde(rename = "config.unknown-rule")]
+    UnknownRule,
+    #[serde(rename = "config.type-mismatch")]
+    TypeMismatch,
+    #[serde(rename = "config.null-not-allowed")]
+    NullNotAllowed,
+    #[serde(rename = "config.invalid-enum")]
+    InvalidEnum,
+    #[serde(rename = "config.unsupported-version")]
+    UnsupportedVersion,
+    #[serde(rename = "config.out-of-range")]
+    OutOfRange,
+    #[serde(rename = "config.rule-setting-unsupported")]
+    RuleSettingUnsupported,
+    #[serde(rename = "config.rule-settings-conflict")]
+    RuleSettingsConflict,
+    #[serde(rename = "config.thresholds-empty")]
+    ThresholdsEmpty,
+    #[serde(rename = "config.threshold-limits-not-increasing")]
+    ThresholdLimitsNotIncreasing,
+    #[serde(rename = "config.threshold-severity-decreases")]
+    ThresholdSeverityDecreases,
+    #[serde(rename = "config.empty-types-while-type-enum-enabled")]
+    EmptyTypesWhileTypeEnumEnabled,
+    #[serde(rename = "config.scope-required-with-empty-allowed-scopes")]
+    ScopeRequiredWithEmptyAllowedScopes,
+    #[serde(rename = "config.scope-enum-without-allowed-scopes")]
+    ScopeEnumWithoutAllowedScopes,
+    #[serde(rename = "config.empty-header-pattern")]
+    EmptyHeaderPattern,
+    #[serde(rename = "config.invalid-header-pattern")]
+    InvalidHeaderPattern,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConfigRelatedInformation {
+    pub message: String,
+    pub range: Option<ConfigRange>,
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConfigDiagnostic {
+    pub code: ConfigErrorCode,
+    pub message: String,
+    pub range: Option<ConfigRange>,
+    pub path: Option<String>,
+    pub related: Vec<ConfigRelatedInformation>,
+}
+
+impl fmt::Display for ConfigDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ConfigDiagnostic {}
 
 const JSONC_OPTIONS: ParseOptions = ParseOptions {
     allow_comments: true,
@@ -235,7 +318,7 @@ impl Default for Config {
 }
 
 #[derive(Serialize)]
-struct RawConfig {
+struct ConfigFile {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     schema: Option<String>,
     version: u64,
@@ -243,7 +326,7 @@ struct RawConfig {
     #[serde(rename = "display-width")]
     display_width: DisplayWidth,
     ignore: Ignore,
-    rules: BTreeMap<String, RawRule>,
+    rules: BTreeMap<String, RuleOverride>,
 }
 
 #[derive(Default, Serialize)]
@@ -264,7 +347,7 @@ struct DisplayWidth {
 }
 
 #[derive(Serialize)]
-struct RawRule {
+struct RuleOverride {
     #[serde(skip_serializing_if = "Option::is_none")]
     enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -287,7 +370,7 @@ impl Config {
                 let has_thresholds = metadata.kind.supports_thresholds();
                 (
                     metadata.id.to_string(),
-                    RawRule {
+                    RuleOverride {
                         enabled: Some(rule.enabled),
                         severity: (!has_thresholds).then_some(rule.severity),
                         thresholds: has_thresholds.then(|| rule.thresholds.clone()),
@@ -295,7 +378,7 @@ impl Config {
                 )
             })
             .collect();
-        serde_json::to_string_pretty(&RawConfig {
+        serde_json::to_string_pretty(&ConfigFile {
             schema: Some(CONFIG_SCHEMA_URL.to_owned()),
             version: 1,
             conventional: Conventional {
@@ -338,6 +421,11 @@ mod tests {
             error.related[0].range,
             Some(ConfigRange { start: 1, end: 10 })
         );
+        let related_json = serde_json::to_value(&error).unwrap()["related"][0].clone();
+        assert_eq!(related_json.as_object().unwrap().len(), 3);
+        assert_eq!(related_json["message"], "first occurrence of key: version");
+        assert_eq!(related_json["path"], "/version");
+        assert_eq!(related_json["range"]["start"], 1);
 
         let escaped = r#"{"version":1,"ver\u0073ion":2}"#;
         let escaped_error = Config::parse(escaped).unwrap_err();
@@ -350,6 +438,10 @@ mod tests {
                 start: later_key,
                 end: later_key + "\"ver\\u0073ion\"".len(),
             })
+        );
+        assert_eq!(
+            escaped_error.related[0].range,
+            Some(ConfigRange { start: 1, end: 10 })
         );
 
         let nested = r#"{"version":1,"rules":{"type-case":{"enabled":true,"enab\u006ced":false}}}"#;
@@ -619,6 +711,18 @@ mod tests {
                 "\"typo\"",
             ),
             (
+                r#"{"version":1,"display-width":{"ambiguous-width":"wide"}}"#,
+                ConfigErrorCode::TypeMismatch,
+                "/display-width/ambiguous-width",
+                "\"wide\"",
+            ),
+            (
+                r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":false,"severity":"error"}]}}}"#,
+                ConfigErrorCode::TypeMismatch,
+                "/rules/body-max-width/thresholds/0/limit",
+                "false",
+            ),
+            (
                 r#"{"version":null}"#,
                 ConfigErrorCode::NullNotAllowed,
                 "/version",
@@ -728,6 +832,10 @@ mod tests {
             Some("/rules/scope-enum/enabled")
         );
         assert!(missing.related[0].range.is_some());
+
+        let unsupported = Config::parse(r#"{"version":2}"#).unwrap_err();
+        assert_eq!(unsupported.code, ConfigErrorCode::UnsupportedVersion);
+        assert!(unsupported.related.is_empty());
     }
 
     #[test]

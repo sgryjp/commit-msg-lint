@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The Rust `Config::parse` error type and WebAssembly `lint` JSON response are breaking API
-  changes. The CLI wrapper format and exit code remain unchanged, though configuration message
-  wording may change.
+  changes. The Web demo renders configuration errors separately from lint results. The CLI wrapper
+  format and exit code remain unchanged, though configuration message wording may change.
 
 ## [0.0.2] - 2026-11-18
 

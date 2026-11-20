@@ -2,6 +2,7 @@ use commit_msg_lint::{
     config::{Config, ConfigDiagnostic},
     lint::lint,
 };
+use serde::Serialize;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 
@@ -25,22 +26,28 @@ pub fn lint_message(message: &str, config: &str) -> Result<String, String> {
             }
         }
     };
-    let diagnostics: Vec<_> = lint(message, &config)
+    let diagnostics = lint(message, &config)
         .into_iter()
-        .map(|d| {
-            json!({
-                "line": d.line,
-                "rule": d.rule,
-                "severity": d.severity.to_string(),
-                "message": d.message,
-            })
+        .map(|diagnostic| LintDiagnosticJson {
+            line: diagnostic.line,
+            rule: diagnostic.rule,
+            severity: diagnostic.severity.to_string(),
+            message: diagnostic.message,
         })
         .collect();
     Ok(serialize_response(diagnostics, Vec::new()))
 }
 
+#[derive(Serialize)]
+struct LintDiagnosticJson {
+    line: usize,
+    rule: &'static str,
+    severity: String,
+    message: String,
+}
+
 fn serialize_response(
-    lint_diagnostics: Vec<serde_json::Value>,
+    lint_diagnostics: Vec<LintDiagnosticJson>,
     config_diagnostics: Vec<ConfigDiagnostic>,
 ) -> String {
     json!({
@@ -218,10 +225,11 @@ mod tests {
     #[test]
     fn default_configuration_json_produces_the_same_diagnostics_as_empty_configuration() {
         let defaults = default_config().unwrap();
-        assert_eq!(
-            lint_message("feat: example", " \n\t"),
-            lint_message("feat: example", "")
-        );
+        let whitespace = response("feat: example", " \n\t");
+        let empty = response("feat: example", "");
+        assert_eq!(whitespace["lintDiagnostics"], empty["lintDiagnostics"]);
+        assert_eq!(whitespace["configDiagnostics"], json!([]));
+        assert_eq!(empty["configDiagnostics"], json!([]));
         for message in [
             "feat: example",
             "unknown: x",

@@ -843,6 +843,20 @@ fn invalid_jsonc_configuration_is_a_cli_error() {
 }
 
 #[test]
+fn nonnumeric_integer_settings_remain_configuration_errors_in_the_cli() {
+    let dir = TestDir::new();
+    fs::write(
+        dir.0.join("invalid.jsonc"),
+        r#"{"version":1,"display-width":{"ambiguous-width":"wide"}}"#,
+    )
+    .unwrap();
+    let output = dir.command(&["--config", "invalid.jsonc"], b"feat: change\n");
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(stderr(&output).contains("invalid configuration invalid.jsonc:"));
+    assert!(!stderr(&output).contains("panicked"));
+}
+
+#[test]
 fn syntax_configuration_diagnostics_remain_cli_errors_with_exit_code_two() {
     let dir = TestDir::new();
     fs::write(dir.0.join("invalid.jsonc"), r#"{"version":1"#).unwrap();

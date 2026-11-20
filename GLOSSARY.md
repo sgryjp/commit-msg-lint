@@ -49,9 +49,18 @@ A rule that determines whether a commit message complies with the conventions an
 lint diagnostic with a severity when it does not.
 _Avoid_: check, validator
 
+**Lint Diagnostic**:
+A message produced by a Lint Rule when a commit message violates the Rule. It has a severity.
+_Avoid_: Configuration Diagnostic
+
 **Configuration Diagnostic**:
 An error describing invalid JSONC configuration, with a stable code and optional source location.
-It has no severity and is distinct from a lint diagnostic.
+It has no severity.
+_Avoid_: Lint Diagnostic
+
+**Related Information**:
+A message that identifies another configuration location relevant to a Configuration Diagnostic.
+_Avoid_: related diagnostic
 
 **Ignored Message**:
 A commit message excluded from all Lint Rules. An Ignored Message may be generated or written

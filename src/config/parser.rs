@@ -1,113 +1,47 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fmt;
 
 use jsonc_parser::ast::{Object, ObjectProp, Value};
 use jsonc_parser::common::Ranged;
 use jsonc_parser::{CollectOptions, parse_to_ast};
-use serde::Serialize;
 
 use super::{
-    Config, Conventional, DisplayWidth, HeaderPattern, Ignore, JSONC_OPTIONS, RULE_METADATA,
-    RawConfig, RawRule, Severity, Threshold,
+    Config, ConfigDiagnostic, ConfigErrorCode, ConfigFile, ConfigRange, ConfigRelatedInformation,
+    Conventional, DisplayWidth, HeaderPattern, Ignore, JSONC_OPTIONS, RULE_METADATA, RuleOverride,
+    Severity, Threshold,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub struct ConfigRange {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl From<jsonc_parser::common::Range> for ConfigRange {
-    fn from(range: jsonc_parser::common::Range) -> Self {
-        Self {
-            start: range.start,
-            end: range.end,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[non_exhaustive]
-pub enum ConfigErrorCode {
-    #[serde(rename = "config.syntax-error")]
-    SyntaxError,
-    #[serde(rename = "config.duplicate-key")]
-    DuplicateKey,
-    #[serde(rename = "config.missing-field")]
-    MissingField,
-    #[serde(rename = "config.unknown-field")]
-    UnknownField,
-    #[serde(rename = "config.unknown-rule")]
-    UnknownRule,
-    #[serde(rename = "config.type-mismatch")]
-    TypeMismatch,
-    #[serde(rename = "config.null-not-allowed")]
-    NullNotAllowed,
-    #[serde(rename = "config.invalid-enum")]
-    InvalidEnum,
-    #[serde(rename = "config.unsupported-version")]
-    UnsupportedVersion,
-    #[serde(rename = "config.out-of-range")]
-    OutOfRange,
-    #[serde(rename = "config.rule-setting-unsupported")]
-    RuleSettingUnsupported,
-    #[serde(rename = "config.rule-settings-conflict")]
-    RuleSettingsConflict,
-    #[serde(rename = "config.thresholds-empty")]
-    ThresholdsEmpty,
-    #[serde(rename = "config.threshold-limits-not-increasing")]
-    ThresholdLimitsNotIncreasing,
-    #[serde(rename = "config.threshold-severity-decreases")]
-    ThresholdSeverityDecreases,
-    #[serde(rename = "config.empty-types-while-type-enum-enabled")]
-    EmptyTypesWhileTypeEnumEnabled,
-    #[serde(rename = "config.scope-required-with-empty-allowed-scopes")]
-    ScopeRequiredWithEmptyAllowedScopes,
-    #[serde(rename = "config.scope-enum-without-allowed-scopes")]
-    ScopeEnumWithoutAllowedScopes,
-    #[serde(rename = "config.empty-header-pattern")]
-    EmptyHeaderPattern,
-    #[serde(rename = "config.invalid-header-pattern")]
-    InvalidHeaderPattern,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ConfigRelatedInformation {
-    pub message: String,
-    pub range: Option<ConfigRange>,
-    pub path: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ConfigDiagnostic {
-    pub code: ConfigErrorCode,
-    pub message: String,
-    pub range: Option<ConfigRange>,
-    pub path: Option<String>,
-    pub related: Vec<ConfigRelatedInformation>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 struct SourceLocation {
     range: Option<ConfigRange>,
     path: Option<String>,
 }
 
 impl SourceLocation {
-    fn new(range: Option<ConfigRange>, path: Option<String>) -> Self {
-        Self { range, path }
+    fn at(range: impl Into<ConfigRange>, path: impl Into<String>) -> Self {
+        Self {
+            range: Some(range.into()),
+            path: Some(path.into()),
+        }
     }
 
-    fn at(range: impl Into<ConfigRange>, path: impl Into<String>) -> Self {
-        Self::new(Some(range.into()), Some(path.into()))
+    fn without_path(range: impl Into<ConfigRange>) -> Self {
+        Self {
+            range: Some(range.into()),
+            path: None,
+        }
     }
 
     fn missing(path: impl Into<String>) -> Self {
-        Self::new(None, Some(path.into()))
+        Self {
+            range: None,
+            path: Some(path.into()),
+        }
     }
 
     fn unlocated() -> Self {
-        Self::new(None, None)
+        Self {
+            range: None,
+            path: None,
+        }
     }
 }
 
@@ -138,14 +72,6 @@ impl ConfigDiagnostic {
     }
 }
 
-impl fmt::Display for ConfigDiagnostic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ConfigDiagnostic {}
-
 impl Config {
     /// Parses JSONC configuration and returns its first structured diagnostic on failure.
     pub fn parse(input: &str) -> Result<Self, ConfigDiagnostic> {
@@ -154,7 +80,7 @@ impl Config {
                 ConfigDiagnostic::new(
                     ConfigErrorCode::SyntaxError,
                     error.to_string(),
-                    SourceLocation::new(Some(error.range().into()), None),
+                    SourceLocation::without_path(error.range()),
                 )
             })?;
         let Some(value) = parsed.value else {
@@ -162,13 +88,13 @@ impl Config {
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::SyntaxError,
                 "expected a JSONC value",
-                SourceLocation::new(Some(ConfigRange { start: end, end }), None),
+                SourceLocation::without_path(ConfigRange { start: end, end }),
             ));
         };
 
         validate_tree(&value, "")?;
         let root = expect_object(&value, "")?;
-        let raw = parse_raw_config(root)?;
+        let raw = parse_config_file(root)?;
         build_config(raw, root)
     }
 }
@@ -212,7 +138,7 @@ fn validate_tree(value: &Value<'_>, path: &str) -> Result<(), ConfigDiagnostic> 
     }
 }
 
-fn parse_raw_config(root: &Object<'_>) -> Result<RawConfig, ConfigDiagnostic> {
+fn parse_config_file(root: &Object<'_>) -> Result<ConfigFile, ConfigDiagnostic> {
     check_known_fields(
         root,
         "",
@@ -239,7 +165,7 @@ fn parse_raw_config(root: &Object<'_>) -> Result<RawConfig, ConfigDiagnostic> {
     let ignore = parse_ignore(root.get("ignore"))?;
     let rules = parse_rules(root.get("rules"))?;
 
-    Ok(RawConfig {
+    Ok(ConfigFile {
         schema,
         version,
         conventional,
@@ -344,7 +270,7 @@ fn parse_ignore(
 
 fn parse_rules(
     property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
-) -> Result<BTreeMap<String, RawRule>, ConfigDiagnostic> {
+) -> Result<BTreeMap<String, RuleOverride>, ConfigDiagnostic> {
     let path = "/rules";
     let Some(object) = optional_object(property, path)? else {
         return Ok(BTreeMap::new());
@@ -376,7 +302,7 @@ fn parse_rules(
             .transpose()?;
         rules.insert(
             id.to_owned(),
-            RawRule {
+            RuleOverride {
                 enabled,
                 severity,
                 thresholds,
@@ -410,7 +336,7 @@ fn parse_thresholds(value: &Value<'_>, path: &str) -> Result<Vec<Threshold>, Con
         .collect()
 }
 
-fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagnostic> {
+fn build_config(raw: ConfigFile, root: &Object<'_>) -> Result<Config, ConfigDiagnostic> {
     if raw.version != 1 {
         return Err(ConfigDiagnostic::new(
             ConfigErrorCode::UnsupportedVersion,
@@ -446,7 +372,17 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
         config.ambiguous_width = width;
     }
 
-    for (id, override_rule) in raw.rules {
+    apply_rule_overrides(&mut config, raw.rules, root)?;
+    validate_cross_settings(&config, conventional_scope_required, root)?;
+    Ok(config)
+}
+
+fn apply_rule_overrides(
+    config: &mut Config,
+    overrides: BTreeMap<String, RuleOverride>,
+    root: &Object<'_>,
+) -> Result<(), ConfigDiagnostic> {
+    for (id, override_rule) in overrides {
         let metadata = RULE_METADATA
             .iter()
             .find(|metadata| metadata.id == id)
@@ -474,17 +410,23 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
             }
         }
         if let Some(thresholds) = override_rule.thresholds {
+            let thresholds_property = source
+                .get("thresholds")
+                .expect("parsed threshold settings have source locations");
             if !metadata.kind.supports_thresholds() {
-                let property = source.get("thresholds").unwrap();
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::RuleSettingUnsupported,
                     format!("{id} does not support thresholds"),
-                    SourceLocation::at(property.value.range(), join_path(&path, "thresholds")),
+                    SourceLocation::at(
+                        thresholds_property.value.range(),
+                        join_path(&path, "thresholds"),
+                    ),
                 ));
             }
             if override_rule.severity.is_some() {
-                let thresholds_property = source.get("thresholds").unwrap();
-                let severity_property = source.get("severity").unwrap();
+                let severity_property = source
+                    .get("severity")
+                    .expect("parsed severity settings have source locations");
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::RuleSettingsConflict,
                     format!("{id} cannot specify both severity and thresholds"),
@@ -502,17 +444,19 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
                 )));
             }
             if thresholds.is_empty() {
-                let property = source.get("thresholds").unwrap();
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::ThresholdsEmpty,
                     format!("{id} thresholds must not be empty"),
-                    SourceLocation::at(property.value.range(), join_path(&path, "thresholds")),
+                    SourceLocation::at(
+                        thresholds_property.value.range(),
+                        join_path(&path, "thresholds"),
+                    ),
                 ));
             }
-            let threshold_array = source
-                .get("thresholds")
-                .and_then(|property| property.value.as_array())
-                .expect("parsed thresholds have source locations");
+            let threshold_array = thresholds_property
+                .value
+                .as_array()
+                .expect("parsed threshold settings are an array");
             let thresholds_path = join_path(&path, "thresholds");
             for (index, pair) in thresholds.windows(2).enumerate() {
                 let earlier_path = join_path(&thresholds_path, &index.to_string());
@@ -527,41 +471,36 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
                     return Err(ConfigDiagnostic::new(
                         ConfigErrorCode::ThresholdLimitsNotIncreasing,
                         format!("{id} threshold limits must be strictly increasing"),
-                        SourceLocation::at(
-                            later.get("limit").unwrap().value.range(),
-                            join_path(&later_path, "limit"),
-                        ),
+                        field_location(later, "limit", &later_path),
                     )
                     .with_related(ConfigRelatedInformation::new(
                         "previous threshold limit",
-                        SourceLocation::at(
-                            earlier.get("limit").unwrap().value.range(),
-                            join_path(&earlier_path, "limit"),
-                        ),
+                        field_location(earlier, "limit", &earlier_path),
                     )));
                 }
                 if pair[0].severity > pair[1].severity {
                     return Err(ConfigDiagnostic::new(
                         ConfigErrorCode::ThresholdSeverityDecreases,
                         format!("{id} threshold severity must not decrease"),
-                        SourceLocation::at(
-                            later.get("severity").unwrap().value.range(),
-                            join_path(&later_path, "severity"),
-                        ),
+                        field_location(later, "severity", &later_path),
                     )
                     .with_related(ConfigRelatedInformation::new(
                         "previous threshold severity",
-                        SourceLocation::at(
-                            earlier.get("severity").unwrap().value.range(),
-                            join_path(&earlier_path, "severity"),
-                        ),
+                        field_location(earlier, "severity", &earlier_path),
                     )));
                 }
             }
             rule.thresholds = thresholds;
         }
     }
+    Ok(())
+}
 
+fn validate_cross_settings(
+    config: &Config,
+    conventional_scope_required: bool,
+    root: &Object<'_>,
+) -> Result<(), ConfigDiagnostic> {
     if config.rules["type-enum"].enabled && config.types.is_empty() {
         let types_location = location_at(root, &["conventional", "types"])
             .expect("empty types must be explicitly configured");
@@ -611,7 +550,7 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
         )));
     }
 
-    Ok(config)
+    Ok(())
 }
 
 fn optional_object<'node, 'text>(
@@ -668,25 +607,21 @@ fn expect_unsigned(value: &Value<'_>, path: &str) -> Result<u64, ConfigDiagnosti
     };
     match parsed {
         Some(number) => Ok(number),
-        None => Err(ConfigDiagnostic::new(
-            ConfigErrorCode::TypeMismatch,
-            "expected an unsigned integer in range",
-            SourceLocation::at(number.range, path),
-        )),
+        None => Err(integer_out_of_range(value, path)),
     }
 }
 
 fn expect_usize(value: &Value<'_>, path: &str) -> Result<usize, ConfigDiagnostic> {
-    let literal = value
-        .as_number_lit()
-        .expect("expect_unsigned requires a number literal");
-    usize::try_from(expect_unsigned(value, path)?).map_err(|_| {
-        ConfigDiagnostic::new(
-            ConfigErrorCode::TypeMismatch,
-            "expected an unsigned integer in range",
-            SourceLocation::at(literal.range, path),
-        )
-    })
+    let number = expect_unsigned(value, path)?;
+    usize::try_from(number).map_err(|_| integer_out_of_range(value, path))
+}
+
+fn integer_out_of_range(value: &Value<'_>, path: &str) -> ConfigDiagnostic {
+    ConfigDiagnostic::new(
+        ConfigErrorCode::TypeMismatch,
+        "expected an unsigned integer in range",
+        SourceLocation::at(value.range(), path),
+    )
 }
 
 fn parse_string_array(value: &Value<'_>, path: &str) -> Result<Vec<String>, ConfigDiagnostic> {
@@ -729,6 +664,13 @@ fn check_known_fields(
         }
     }
     Ok(())
+}
+
+fn field_location(object: &Object<'_>, field: &str, parent_path: &str) -> SourceLocation {
+    let property = object
+        .get(field)
+        .expect("parsed field has a source location");
+    SourceLocation::at(property.value.range(), join_path(parent_path, field))
 }
 
 fn location_at(root: &Object<'_>, components: &[&str]) -> Option<SourceLocation> {
