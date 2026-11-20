@@ -19,7 +19,6 @@ feature. Group them by area; prioritize individual items when they are triaged.
 
 ## Integration and extensibility
 
-- [ ] Decide on a license; no license file is currently provided.
 - [ ] Decide which installation and distribution channels to support beyond building from a
   checkout and the existing pre-commit hook.
 - [ ] Decide what platform guarantees to offer, including Windows hook behavior.

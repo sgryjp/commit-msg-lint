@@ -128,6 +128,10 @@ Run `commit-msg-lint --help-for-agents` or read the [agent usage guide](docs/age
 ## Development
 
 See [Contributing](CONTRIBUTING.md) for development and validation, and the
-[Changelog](CHANGELOG.md) for release history. There is currently no license file. Licensing,
-distribution channels, platform guarantees, and library API support remain open maintainer
-decisions; see [TODO](TODO.md).
+[Changelog](CHANGELOG.md) for release history. Distribution channels, platform guarantees, and
+library API support remain open maintainer decisions; see [TODO](TODO.md).
+
+## License
+
+Licensed under either the [MIT License](LICENSE-MIT) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
