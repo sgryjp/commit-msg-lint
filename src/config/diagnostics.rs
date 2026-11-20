@@ -87,33 +87,53 @@ pub struct ConfigDiagnostic {
     pub related: Vec<ConfigRelatedInformation>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceLocation {
+    range: Option<ConfigRange>,
+    path: Option<String>,
+}
+
+impl SourceLocation {
+    fn new(range: Option<ConfigRange>, path: Option<String>) -> Self {
+        Self { range, path }
+    }
+
+    fn at(range: impl Into<ConfigRange>, path: impl Into<String>) -> Self {
+        Self::new(Some(range.into()), Some(path.into()))
+    }
+
+    fn missing(path: impl Into<String>) -> Self {
+        Self::new(None, Some(path.into()))
+    }
+
+    fn unlocated() -> Self {
+        Self::new(None, None)
+    }
+}
+
+impl ConfigRelatedInformation {
+    fn new(message: impl Into<String>, location: SourceLocation) -> Self {
+        Self {
+            message: message.into(),
+            range: location.range,
+            path: location.path,
+        }
+    }
+}
+
 impl ConfigDiagnostic {
-    fn new(
-        code: ConfigErrorCode,
-        message: impl Into<String>,
-        range: Option<ConfigRange>,
-        path: Option<String>,
-    ) -> Self {
+    fn new(code: ConfigErrorCode, message: impl Into<String>, location: SourceLocation) -> Self {
         Self {
             code,
             message: message.into(),
-            range,
-            path,
+            range: location.range,
+            path: location.path,
             related: Vec::new(),
         }
     }
 
-    fn with_related(
-        mut self,
-        message: impl Into<String>,
-        range: Option<ConfigRange>,
-        path: Option<String>,
-    ) -> Self {
-        self.related.push(ConfigRelatedInformation {
-            message: message.into(),
-            range,
-            path,
-        });
+    fn with_related(mut self, related: ConfigRelatedInformation) -> Self {
+        self.related.push(related);
         self
     }
 }
@@ -134,8 +154,7 @@ impl Config {
                 ConfigDiagnostic::new(
                     ConfigErrorCode::SyntaxError,
                     error.to_string(),
-                    Some(error.range().into()),
-                    None,
+                    SourceLocation::new(Some(error.range().into()), None),
                 )
             })?;
         let Some(value) = parsed.value else {
@@ -143,20 +162,18 @@ impl Config {
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::SyntaxError,
                 "expected a JSONC value",
-                Some(ConfigRange { start: end, end }),
-                None,
+                SourceLocation::new(Some(ConfigRange { start: end, end }), None),
             ));
         };
 
-        validate_duplicate_keys(&value, "")?;
-        validate_no_nulls(&value, "")?;
+        validate_tree(&value, "")?;
         let root = expect_object(&value, "")?;
         let raw = parse_raw_config(root)?;
         build_config(raw, root)
     }
 }
 
-fn validate_duplicate_keys(value: &Value<'_>, path: &str) -> Result<(), ConfigDiagnostic> {
+fn validate_tree(value: &Value<'_>, path: &str) -> Result<(), ConfigDiagnostic> {
     match value {
         Value::Object(object) => {
             let mut seen = HashMap::<String, ConfigRange>::new();
@@ -168,49 +185,29 @@ fn validate_duplicate_keys(value: &Value<'_>, path: &str) -> Result<(), ConfigDi
                     return Err(ConfigDiagnostic::new(
                         ConfigErrorCode::DuplicateKey,
                         format!("duplicate key: {key}"),
-                        Some(key_range),
-                        Some(property_path.clone()),
+                        SourceLocation::at(key_range, property_path.clone()),
                     )
-                    .with_related(
+                    .with_related(ConfigRelatedInformation::new(
                         format!("first occurrence of key: {key}"),
-                        Some(*previous_range),
-                        Some(property_path),
-                    ));
+                        SourceLocation::at(*previous_range, property_path),
+                    )));
                 }
-                validate_duplicate_keys(&property.value, &property_path)?;
                 seen.insert(key.to_owned(), key_range);
+                validate_tree(&property.value, &join_path(path, key))?;
             }
+            Ok(())
         }
         Value::Array(array) => {
             for (index, element) in array.elements.iter().enumerate() {
-                validate_duplicate_keys(element, &join_path(path, &index.to_string()))?;
+                validate_tree(element, &join_path(path, &index.to_string()))?;
             }
+            Ok(())
         }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn validate_no_nulls(value: &Value<'_>, path: &str) -> Result<(), ConfigDiagnostic> {
-    match value {
         Value::NullKeyword(null) => Err(ConfigDiagnostic::new(
             ConfigErrorCode::NullNotAllowed,
             "null is not allowed; omit the field to use its default",
-            Some(null.range.into()),
-            Some(path.to_owned()),
+            SourceLocation::at(null.range, path),
         )),
-        Value::Object(object) => {
-            for property in &object.properties {
-                validate_no_nulls(&property.value, &join_path(path, property.name.as_str()))?;
-            }
-            Ok(())
-        }
-        Value::Array(array) => {
-            for (index, element) in array.elements.iter().enumerate() {
-                validate_no_nulls(element, &join_path(path, &index.to_string()))?;
-            }
-            Ok(())
-        }
         _ => Ok(()),
     }
 }
@@ -232,7 +229,7 @@ fn parse_raw_config(root: &Object<'_>) -> Result<RawConfig, ConfigDiagnostic> {
     let version = root
         .get("version")
         .ok_or_else(|| missing_field("version", "/version"))?;
-    let version = expect_unsigned(&version.value, "/version", u64::MAX)?;
+    let version = expect_unsigned(&version.value, "/version")?;
     let schema = root
         .get("$schema")
         .map(|property| expect_string(&property.value, "/$schema").map(str::to_owned))
@@ -255,11 +252,10 @@ fn parse_raw_config(root: &Object<'_>) -> Result<RawConfig, ConfigDiagnostic> {
 fn parse_conventional(
     property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
 ) -> Result<Conventional, ConfigDiagnostic> {
-    let Some(property) = property else {
+    let path = "/conventional";
+    let Some(object) = optional_object(property, path)? else {
         return Ok(Conventional::default());
     };
-    let path = "/conventional";
-    let object = expect_object(&property.value, path)?;
     check_known_fields(object, path, &["types", "scope-required", "allowed-scopes"])?;
     let types = object
         .get("types")
@@ -284,11 +280,10 @@ fn parse_conventional(
 fn parse_display_width(
     property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
 ) -> Result<DisplayWidth, ConfigDiagnostic> {
-    let Some(property) = property else {
+    let path = "/display-width";
+    let Some(object) = optional_object(property, path)? else {
         return Ok(DisplayWidth::default());
     };
-    let path = "/display-width";
-    let object = expect_object(&property.value, path)?;
     check_known_fields(object, path, &["ambiguous-width"])?;
     let ambiguous_width = object
         .get("ambiguous-width")
@@ -300,11 +295,10 @@ fn parse_display_width(
 fn parse_ignore(
     property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
 ) -> Result<Ignore, ConfigDiagnostic> {
-    let Some(property) = property else {
+    let path = "/ignore";
+    let Some(object) = optional_object(property, path)? else {
         return Ok(Ignore::default());
     };
-    let path = "/ignore";
-    let object = expect_object(&property.value, path)?;
     check_known_fields(
         object,
         path,
@@ -331,16 +325,14 @@ fn parse_ignore(
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::EmptyHeaderPattern,
                     "ignore header-patterns must not contain an empty pattern",
-                    Some(value.range().into()),
-                    Some(item_path),
+                    SourceLocation::at(value.range(), item_path),
                 ));
             }
             let pattern = HeaderPattern::new(source).map_err(|message| {
                 ConfigDiagnostic::new(
                     ConfigErrorCode::InvalidHeaderPattern,
                     message,
-                    Some(value.range().into()),
-                    Some(item_path),
+                    SourceLocation::at(value.range(), item_path),
                 )
             })?;
             patterns.push(pattern);
@@ -353,11 +345,10 @@ fn parse_ignore(
 fn parse_rules(
     property: Option<&jsonc_parser::ast::ObjectProp<'_>>,
 ) -> Result<BTreeMap<String, RawRule>, ConfigDiagnostic> {
-    let Some(property) = property else {
+    let path = "/rules";
+    let Some(object) = optional_object(property, path)? else {
         return Ok(BTreeMap::new());
     };
-    let path = "/rules";
-    let object = expect_object(&property.value, path)?;
     let mut rules = BTreeMap::new();
     for property in &object.properties {
         let id = property.name.as_str();
@@ -366,8 +357,7 @@ fn parse_rules(
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::UnknownRule,
                 format!("unknown rule: {id}"),
-                Some(property.name.range().into()),
-                Some(rule_path),
+                SourceLocation::at(property.name.range(), rule_path),
             ));
         }
         let object = expect_object(&property.value, &rule_path)?;
@@ -421,13 +411,11 @@ fn parse_thresholds(value: &Value<'_>, path: &str) -> Result<Vec<Threshold>, Con
 }
 
 fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagnostic> {
-    let version = property_at(root, &["version"]).expect("parsed config has a version location");
     if raw.version != 1 {
         return Err(ConfigDiagnostic::new(
             ConfigErrorCode::UnsupportedVersion,
             format!("unsupported configuration version: {}", raw.version),
-            Some(version.value.range().into()),
-            Some("/version".to_owned()),
+            location_at(root, &["version"]).expect("parsed config has a version location"),
         ));
     }
 
@@ -447,13 +435,12 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
     }
     if let Some(width) = raw.display_width.ambiguous_width {
         if !matches!(width, 1 | 2) {
-            let property = property_at(root, &["display-width", "ambiguous-width"])
+            let location = location_at(root, &["display-width", "ambiguous-width"])
                 .expect("parsed ambiguous-width has a source location");
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::OutOfRange,
                 "ambiguous-width must be 1 or 2",
-                Some(property.value.range().into()),
-                Some("/display-width/ambiguous-width".to_owned()),
+                location,
             ));
         }
         config.ambiguous_width = width;
@@ -478,8 +465,7 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::RuleSettingUnsupported,
                     format!("{id} uses thresholds, not severity"),
-                    Some(property.value.range().into()),
-                    Some(join_path(&path, "severity")),
+                    SourceLocation::at(property.value.range(), join_path(&path, "severity")),
                 ));
             }
             rule.severity = severity;
@@ -493,8 +479,7 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::RuleSettingUnsupported,
                     format!("{id} does not support thresholds"),
-                    Some(property.value.range().into()),
-                    Some(join_path(&path, "thresholds")),
+                    SourceLocation::at(property.value.range(), join_path(&path, "thresholds")),
                 ));
             }
             if override_rule.severity.is_some() {
@@ -503,22 +488,25 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::RuleSettingsConflict,
                     format!("{id} cannot specify both severity and thresholds"),
-                    Some(thresholds_property.value.range().into()),
-                    Some(join_path(&path, "thresholds")),
+                    SourceLocation::at(
+                        thresholds_property.value.range(),
+                        join_path(&path, "thresholds"),
+                    ),
                 )
-                .with_related(
+                .with_related(ConfigRelatedInformation::new(
                     "severity is also specified here",
-                    Some(severity_property.value.range().into()),
-                    Some(join_path(&path, "severity")),
-                ));
+                    SourceLocation::at(
+                        severity_property.value.range(),
+                        join_path(&path, "severity"),
+                    ),
+                )));
             }
             if thresholds.is_empty() {
                 let property = source.get("thresholds").unwrap();
                 return Err(ConfigDiagnostic::new(
                     ConfigErrorCode::ThresholdsEmpty,
                     format!("{id} thresholds must not be empty"),
-                    Some(property.value.range().into()),
-                    Some(join_path(&path, "thresholds")),
+                    SourceLocation::at(property.value.range(), join_path(&path, "thresholds")),
                 ));
             }
             let threshold_array = source
@@ -539,27 +527,35 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
                     return Err(ConfigDiagnostic::new(
                         ConfigErrorCode::ThresholdLimitsNotIncreasing,
                         format!("{id} threshold limits must be strictly increasing"),
-                        Some(later.get("limit").unwrap().value.range().into()),
-                        Some(join_path(&later_path, "limit")),
+                        SourceLocation::at(
+                            later.get("limit").unwrap().value.range(),
+                            join_path(&later_path, "limit"),
+                        ),
                     )
-                    .with_related(
+                    .with_related(ConfigRelatedInformation::new(
                         "previous threshold limit",
-                        Some(earlier.get("limit").unwrap().value.range().into()),
-                        Some(join_path(&earlier_path, "limit")),
-                    ));
+                        SourceLocation::at(
+                            earlier.get("limit").unwrap().value.range(),
+                            join_path(&earlier_path, "limit"),
+                        ),
+                    )));
                 }
                 if pair[0].severity > pair[1].severity {
                     return Err(ConfigDiagnostic::new(
                         ConfigErrorCode::ThresholdSeverityDecreases,
                         format!("{id} threshold severity must not decrease"),
-                        Some(later.get("severity").unwrap().value.range().into()),
-                        Some(join_path(&later_path, "severity")),
+                        SourceLocation::at(
+                            later.get("severity").unwrap().value.range(),
+                            join_path(&later_path, "severity"),
+                        ),
                     )
-                    .with_related(
+                    .with_related(ConfigRelatedInformation::new(
                         "previous threshold severity",
-                        Some(earlier.get("severity").unwrap().value.range().into()),
-                        Some(join_path(&earlier_path, "severity")),
-                    ));
+                        SourceLocation::at(
+                            earlier.get("severity").unwrap().value.range(),
+                            join_path(&earlier_path, "severity"),
+                        ),
+                    )));
                 }
             }
             rule.thresholds = thresholds;
@@ -567,61 +563,64 @@ fn build_config(raw: RawConfig, root: &Object<'_>) -> Result<Config, ConfigDiagn
     }
 
     if config.rules["type-enum"].enabled && config.types.is_empty() {
-        let types = property_at(root, &["conventional", "types"])
+        let types_location = location_at(root, &["conventional", "types"])
             .expect("empty types must be explicitly configured");
-        let type_enum_enabled = property_at(root, &["rules", "type-enum", "enabled"]);
+        let type_enum_enabled = location_at(root, &["rules", "type-enum", "enabled"]);
         let related = match type_enum_enabled {
-            Some(enabled) => (
-                "type-enum is enabled here",
-                Some(enabled.value.range().into()),
-                Some("/rules/type-enum/enabled".to_owned()),
+            Some(location) => ConfigRelatedInformation::new("type-enum is enabled here", location),
+            None => ConfigRelatedInformation::new(
+                "type-enum is enabled by default",
+                SourceLocation::unlocated(),
             ),
-            None => ("type-enum is enabled by default", None, None),
         };
         return Err(ConfigDiagnostic::new(
             ConfigErrorCode::EmptyTypesWhileTypeEnumEnabled,
             "types must not be empty when type-enum is enabled",
-            Some(types.value.range().into()),
-            Some("/conventional/types".to_owned()),
+            types_location,
         )
-        .with_related(related.0, related.1, related.2));
+        .with_related(related));
     }
 
     if conventional_scope_required && config.allowed_scopes.as_ref().is_some_and(Vec::is_empty) {
-        let scopes = property_at(root, &["conventional", "allowed-scopes"])
+        let scopes_location = location_at(root, &["conventional", "allowed-scopes"])
             .expect("empty allowed-scopes must be explicitly configured");
-        let scope_required = property_at(root, &["conventional", "scope-required"])
+        let scope_required_location = location_at(root, &["conventional", "scope-required"])
             .expect("scope-required true must be explicitly configured");
         return Err(ConfigDiagnostic::new(
             ConfigErrorCode::ScopeRequiredWithEmptyAllowedScopes,
             "scope-required cannot be combined with empty allowed-scopes",
-            Some(scopes.value.range().into()),
-            Some("/conventional/allowed-scopes".to_owned()),
+            scopes_location,
         )
-        .with_related(
+        .with_related(ConfigRelatedInformation::new(
             "scope-required is enabled here",
-            Some(scope_required.value.range().into()),
-            Some("/conventional/scope-required".to_owned()),
-        ));
+            scope_required_location,
+        )));
     }
 
     if config.rules["scope-enum"].enabled && config.allowed_scopes.is_none() {
-        let scope_enum_enabled = property_at(root, &["rules", "scope-enum", "enabled"])
+        let scope_enum_enabled = location_at(root, &["rules", "scope-enum", "enabled"])
             .expect("scope-enum cannot be enabled without an explicit override");
         return Err(ConfigDiagnostic::new(
             ConfigErrorCode::ScopeEnumWithoutAllowedScopes,
             "scope-enum requires allowed-scopes",
-            None,
-            Some("/conventional/allowed-scopes".to_owned()),
+            SourceLocation::missing(pointer(&["conventional", "allowed-scopes"])),
         )
-        .with_related(
+        .with_related(ConfigRelatedInformation::new(
             "scope-enum is enabled here",
-            Some(scope_enum_enabled.value.range().into()),
-            Some("/rules/scope-enum/enabled".to_owned()),
-        ));
+            scope_enum_enabled,
+        )));
     }
 
     Ok(config)
+}
+
+fn optional_object<'node, 'text>(
+    property: Option<&'node ObjectProp<'text>>,
+    path: &str,
+) -> Result<Option<&'node Object<'text>>, ConfigDiagnostic> {
+    property
+        .map(|property| expect_object(&property.value, path))
+        .transpose()
 }
 
 fn expect_object<'node, 'text>(
@@ -630,7 +629,7 @@ fn expect_object<'node, 'text>(
 ) -> Result<&'node Object<'text>, ConfigDiagnostic> {
     value
         .as_object()
-        .ok_or_else(|| mismatch(value, path, "an object"))
+        .ok_or_else(|| type_mismatch(value, path, "an object"))
 }
 
 fn expect_array<'node, 'text>(
@@ -639,26 +638,26 @@ fn expect_array<'node, 'text>(
 ) -> Result<&'node jsonc_parser::ast::Array<'text>, ConfigDiagnostic> {
     value
         .as_array()
-        .ok_or_else(|| mismatch(value, path, "an array"))
+        .ok_or_else(|| type_mismatch(value, path, "an array"))
 }
 
 fn expect_string<'a>(value: &'a Value<'_>, path: &str) -> Result<&'a str, ConfigDiagnostic> {
     value
         .as_string_lit()
         .map(|literal| literal.value.as_ref())
-        .ok_or_else(|| mismatch(value, path, "a string"))
+        .ok_or_else(|| type_mismatch(value, path, "a string"))
 }
 
 fn expect_boolean(value: &Value<'_>, path: &str) -> Result<bool, ConfigDiagnostic> {
     value
         .as_boolean_lit()
         .map(|literal| literal.value)
-        .ok_or_else(|| mismatch(value, path, "a boolean"))
+        .ok_or_else(|| type_mismatch(value, path, "a boolean"))
 }
 
-fn expect_unsigned(value: &Value<'_>, path: &str, max: u64) -> Result<u64, ConfigDiagnostic> {
+fn expect_unsigned(value: &Value<'_>, path: &str) -> Result<u64, ConfigDiagnostic> {
     let Some(number) = value.as_number_lit() else {
-        return Err(mismatch(value, path, "an unsigned integer"));
+        return Err(type_mismatch(value, path, "an unsigned integer"));
     };
     let parsed = if number.value == "-0" {
         Some(0)
@@ -668,18 +667,26 @@ fn expect_unsigned(value: &Value<'_>, path: &str, max: u64) -> Result<u64, Confi
         number.value.parse::<u64>().ok()
     };
     match parsed {
-        Some(number) if number <= max => Ok(number),
-        _ => Err(ConfigDiagnostic::new(
+        Some(number) => Ok(number),
+        None => Err(ConfigDiagnostic::new(
             ConfigErrorCode::TypeMismatch,
             "expected an unsigned integer in range",
-            Some(number.range.into()),
-            Some(path.to_owned()),
+            SourceLocation::at(number.range, path),
         )),
     }
 }
 
 fn expect_usize(value: &Value<'_>, path: &str) -> Result<usize, ConfigDiagnostic> {
-    expect_unsigned(value, path, usize::MAX as u64).map(|value| value as usize)
+    let literal = value
+        .as_number_lit()
+        .expect("expect_unsigned requires a number literal");
+    usize::try_from(expect_unsigned(value, path)?).map_err(|_| {
+        ConfigDiagnostic::new(
+            ConfigErrorCode::TypeMismatch,
+            "expected an unsigned integer in range",
+            SourceLocation::at(literal.range, path),
+        )
+    })
 }
 
 fn parse_string_array(value: &Value<'_>, path: &str) -> Result<Vec<String>, ConfigDiagnostic> {
@@ -701,8 +708,7 @@ fn parse_severity(value: &Value<'_>, path: &str) -> Result<Severity, ConfigDiagn
         name => Err(ConfigDiagnostic::new(
             ConfigErrorCode::InvalidEnum,
             format!("invalid severity: {name}"),
-            Some(value.range().into()),
-            Some(path.to_owned()),
+            SourceLocation::at(value.range(), path),
         )),
     }
 }
@@ -718,12 +724,25 @@ fn check_known_fields(
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::UnknownField,
                 format!("unknown field: {key}"),
-                Some(property.name.range().into()),
-                Some(join_path(path, key)),
+                SourceLocation::at(property.name.range(), join_path(path, key)),
             ));
         }
     }
     Ok(())
+}
+
+fn location_at(root: &Object<'_>, components: &[&str]) -> Option<SourceLocation> {
+    let property = property_at(root, components)?;
+    Some(SourceLocation::at(
+        property.value.range(),
+        pointer(components),
+    ))
+}
+
+fn pointer(components: &[&str]) -> String {
+    components
+        .iter()
+        .fold(String::new(), |path, component| join_path(&path, component))
 }
 
 fn property_at<'node, 'text>(
@@ -745,17 +764,15 @@ fn missing_field(name: &str, path: &str) -> ConfigDiagnostic {
     ConfigDiagnostic::new(
         ConfigErrorCode::MissingField,
         format!("missing field: {name}"),
-        None,
-        Some(path.to_owned()),
+        SourceLocation::missing(path),
     )
 }
 
-fn mismatch(value: &Value<'_>, path: &str, expected: &str) -> ConfigDiagnostic {
+fn type_mismatch(value: &Value<'_>, path: &str, expected: &str) -> ConfigDiagnostic {
     ConfigDiagnostic::new(
         ConfigErrorCode::TypeMismatch,
         format!("expected {expected}"),
-        Some(value.range().into()),
-        Some(path.to_owned()),
+        SourceLocation::at(value.range(), path),
     )
 }
 

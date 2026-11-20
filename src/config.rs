@@ -4,6 +4,9 @@ use std::fmt;
 use jsonc_parser::ParseOptions;
 use serde::{Deserialize, Serialize};
 
+mod diagnostics;
+pub use diagnostics::{ConfigDiagnostic, ConfigErrorCode, ConfigRange, ConfigRelatedInformation};
+
 pub const CONFIG_SCHEMA_URL: &str =
     "https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json";
 
@@ -270,9 +273,6 @@ struct RawRule {
     thresholds: Option<Vec<Threshold>>,
 }
 
-mod diagnostics;
-pub use diagnostics::{ConfigDiagnostic, ConfigErrorCode, ConfigRange, ConfigRelatedInformation};
-
 impl Config {
     /// Returns a plain JSON representation of the built-in defaults.
     pub fn default_json() -> Result<String, serde_json::Error> {
@@ -360,6 +360,15 @@ mod tests {
             Some("/rules/type-case/enabled")
         );
         assert_eq!(nested_error.related.len(), 1);
+
+        let thresholds = r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":1,"limit":2,"severity":"error"}]}}}"#;
+        let threshold_error = Config::parse(thresholds).unwrap_err();
+        assert_eq!(threshold_error.code, ConfigErrorCode::DuplicateKey);
+        assert_eq!(
+            threshold_error.path.as_deref(),
+            Some("/rules/body-max-width/thresholds/0/limit")
+        );
+        assert_eq!(threshold_error.related.len(), 1);
     }
 
     #[test]
@@ -369,10 +378,26 @@ mod tests {
         assert_eq!(empty.range, Some(ConfigRange { start: 0, end: 0 }));
         assert_eq!(empty.path, None);
 
-        let malformed = Config::parse(r#"{"version":1"#).unwrap_err();
+        let unterminated = r#"{"version":1"#;
+        let malformed = Config::parse(unterminated).unwrap_err();
         assert_eq!(malformed.code, ConfigErrorCode::SyntaxError);
-        assert!(malformed.range.is_some());
+        assert_eq!(
+            malformed.range.unwrap().end,
+            unterminated.len(),
+            "unterminated input should report its EOF position"
+        );
         assert_eq!(malformed.path, None);
+
+        for json5 in [
+            r#"{version:1}"#,
+            r#"{"version":0x1}"#,
+            r#"{"version":1,"conventional":{"types":['fix']}}"#,
+        ] {
+            let diagnostic = Config::parse(json5).unwrap_err();
+            assert_eq!(diagnostic.code, ConfigErrorCode::SyntaxError, "{json5}");
+            assert!(diagnostic.range.is_some(), "{json5}");
+            assert_eq!(diagnostic.path, None, "{json5}");
+        }
 
         let root_missing = Config::parse("{}").unwrap_err();
         assert_eq!(root_missing.code, ConfigErrorCode::MissingField);
@@ -419,10 +444,8 @@ mod tests {
             })
         );
 
-        let conflict = Config::parse(
-            r#"{"version":1,"rules":{"body-max-width":{"severity":"warning","thresholds":[{"limit":10,"severity":"error"}]}}}"#,
-        )
-        .unwrap_err();
+        let conflict_input = r#"{"version":1,"rules":{"body-max-width":{"severity":"warning","thresholds":[{"limit":10,"severity":"error"}]}}}"#;
+        let conflict = Config::parse(conflict_input).unwrap_err();
         assert_eq!(conflict.code, ConfigErrorCode::RuleSettingsConflict);
         assert_eq!(
             conflict.path.as_deref(),
@@ -432,8 +455,40 @@ mod tests {
             conflict.related[0].path.as_deref(),
             Some("/rules/body-max-width/severity")
         );
-        assert!(conflict.range.is_some());
-        assert!(conflict.related[0].range.is_some());
+        let thresholds_start = conflict_input.find("[{").unwrap();
+        let thresholds_end = conflict_input.find("}]").unwrap() + 2;
+        assert_eq!(
+            conflict.range,
+            Some(ConfigRange {
+                start: thresholds_start,
+                end: thresholds_end,
+            })
+        );
+        let severity_start = conflict_input.find("\"warning\"").unwrap();
+        assert_eq!(
+            conflict.related[0].range,
+            Some(ConfigRange {
+                start: severity_start,
+                end: severity_start + "\"warning\"".len(),
+            })
+        );
+
+        let decreasing = Config::parse(
+            r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":10,"severity":"error"},{"limit":20,"severity":"warning"}]}}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(decreasing.code, ConfigErrorCode::ThresholdSeverityDecreases);
+        assert_eq!(
+            decreasing.path.as_deref(),
+            Some("/rules/body-max-width/thresholds/1/severity")
+        );
+        assert_eq!(
+            decreasing.related[0].path.as_deref(),
+            Some("/rules/body-max-width/thresholds/0/severity")
+        );
+        assert!(decreasing.range.is_some());
+        assert!(decreasing.related[0].range.is_some());
+        assert!(decreasing.related[0].message.contains("previous"));
     }
 
     #[test]
@@ -527,17 +582,25 @@ mod tests {
             })
         );
 
-        let japanese = "{\r\n  \"version\": 1,\r\n  \"conventional\": {\"types\": [\"日本語😀\"]},\r\n  \"未設定\": true\r\n}";
+        let japanese =
+            "{\r\n  \"version\": 1,\r\n  \"conventional\": {\"types\": [\"日本語😀\", 3]}\r\n}";
         let diagnostic = Config::parse(japanese).unwrap_err();
-        let key_start = japanese.find("\"未設定\"").unwrap();
-        assert_eq!(diagnostic.path.as_deref(), Some("/未設定"));
+        let value_start = japanese.find(", 3").unwrap() + 2;
+        assert_eq!(diagnostic.code, ConfigErrorCode::TypeMismatch);
+        assert_eq!(diagnostic.path.as_deref(), Some("/conventional/types/1"));
         assert_eq!(
             diagnostic.range,
             Some(ConfigRange {
-                start: key_start,
-                end: key_start + "\"未設定\"".len(),
+                start: value_start,
+                end: value_start + 1,
             })
         );
+
+        let related = r#"{"version":1,"設定":{"key":1,"key":2}}"#;
+        let diagnostic = Config::parse(related).unwrap_err();
+        assert_eq!(diagnostic.code, ConfigErrorCode::DuplicateKey);
+        assert_eq!(diagnostic.path.as_deref(), Some("/設定/key"));
+        assert_eq!(diagnostic.related[0].path.as_deref(), Some("/設定/key"));
     }
 
     #[test]
@@ -683,7 +746,9 @@ mod tests {
             diagnostic.related[0].path.as_deref(),
             Some("/conventional/scope-required")
         );
+        assert!(diagnostic.range.is_some());
         assert!(diagnostic.related[0].range.is_some());
+        assert!(diagnostic.related[0].message.contains("scope-required"));
     }
 
     #[test]

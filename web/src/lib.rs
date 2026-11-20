@@ -1,4 +1,7 @@
-use commit_msg_lint::{config::Config, lint::lint};
+use commit_msg_lint::{
+    config::{Config, ConfigDiagnostic},
+    lint::lint,
+};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
 
@@ -18,11 +21,7 @@ pub fn lint_message(message: &str, config: &str) -> Result<String, String> {
         match Config::parse(config) {
             Ok(config) => config,
             Err(diagnostic) => {
-                return Ok(json!({
-                    "lintDiagnostics": [],
-                    "configDiagnostics": [diagnostic],
-                })
-                .to_string());
+                return Ok(serialize_response(Vec::new(), vec![diagnostic]));
             }
         }
     };
@@ -37,11 +36,18 @@ pub fn lint_message(message: &str, config: &str) -> Result<String, String> {
             })
         })
         .collect();
-    Ok(json!({
-        "lintDiagnostics": diagnostics,
-        "configDiagnostics": [],
+    Ok(serialize_response(diagnostics, Vec::new()))
+}
+
+fn serialize_response(
+    lint_diagnostics: Vec<serde_json::Value>,
+    config_diagnostics: Vec<ConfigDiagnostic>,
+) -> String {
+    json!({
+        "lintDiagnostics": lint_diagnostics,
+        "configDiagnostics": config_diagnostics,
     })
-    .to_string())
+    .to_string()
 }
 
 #[cfg(test)]
@@ -159,7 +165,10 @@ mod tests {
             let result = response("fixup! invalid", config);
             assert!(result["lintDiagnostics"].as_array().unwrap().is_empty());
             assert_eq!(result["configDiagnostics"].as_array().unwrap().len(), 1);
-            assert!(result["configDiagnostics"][0]["code"].is_string());
+            let diagnostic = &result["configDiagnostics"][0];
+            for field in ["code", "message", "range", "path", "related"] {
+                assert!(diagnostic.get(field).is_some(), "{config}: missing {field}");
+            }
         }
     }
 
@@ -173,6 +182,13 @@ mod tests {
         );
         assert!(result["configDiagnostics"].as_array().unwrap().is_empty());
         assert_eq!(result.as_object().unwrap().len(), 2);
+
+        let error = response("feat: x", r#"{"version":1,"unknown":true}"#);
+        let diagnostic = &error["configDiagnostics"][0];
+        assert_eq!(diagnostic["code"], "config.unknown-field");
+        assert_eq!(diagnostic["path"], "/unknown");
+        assert!(diagnostic["range"]["start"].is_number());
+        assert_eq!(diagnostic["related"], json!([]));
     }
 
     #[test]
@@ -202,6 +218,10 @@ mod tests {
     #[test]
     fn default_configuration_json_produces_the_same_diagnostics_as_empty_configuration() {
         let defaults = default_config().unwrap();
+        assert_eq!(
+            lint_message("feat: example", " \n\t"),
+            lint_message("feat: example", "")
+        );
         for message in [
             "feat: example",
             "unknown: x",

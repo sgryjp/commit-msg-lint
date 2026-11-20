@@ -46,8 +46,12 @@ _Avoid_: byte length, character count
 
 **Lint Rule**:
 A rule that determines whether a commit message complies with the conventions and produces a
-diagnostic with a severity when it does not.
+lint diagnostic with a severity when it does not.
 _Avoid_: check, validator
+
+**Configuration Diagnostic**:
+An error describing invalid JSONC configuration, with a stable code and optional source location.
+It has no severity and is distinct from a lint diagnostic.
 
 **Ignored Message**:
 A commit message excluded from all Lint Rules. An Ignored Message may be generated or written

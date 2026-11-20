@@ -113,6 +113,11 @@ The CLI keeps its existing configuration-error presentation and exit behavior:
 `invalid configuration <path>: <message>` on standard error and exit code `2`. Configuration
 parsing diagnostics do not cover file discovery, file I/O, or UTF-8 reading errors.
 
+The AST retains duplicate keys and source ranges that typed deserialization would discard. Using it
+keeps the JSONC parser authoritative and lets the CLI and WebAssembly share one validation path,
+though it requires the parser to map configuration fields explicitly. This contract reports one
+error; collecting multiple diagnostics and converting them to LSP positions remain out of scope.
+
 ## Finding a configuration file
 
 Use `--config <path>` to select a file explicitly. The path is relative to the current working
