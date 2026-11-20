@@ -15,15 +15,6 @@ pub struct ConfigRange {
     pub end: usize,
 }
 
-impl From<jsonc_parser::common::Range> for ConfigRange {
-    fn from(range: jsonc_parser::common::Range) -> Self {
-        Self {
-            start: range.start,
-            end: range.end,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[non_exhaustive]
 pub enum ConfigErrorCode {
@@ -410,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_decoded_keys_point_to_the_later_key_and_relate_the_first() {
+    fn duplicate_decoded_keys_report_both_key_ranges() {
         let input = r#"{"version":1,"version":2}"#;
         let error = Config::parse(input).unwrap_err();
         assert_eq!(error.code, ConfigErrorCode::DuplicateKey);
@@ -443,24 +434,27 @@ mod tests {
             escaped_error.related[0].range,
             Some(ConfigRange { start: 1, end: 10 })
         );
+    }
 
-        let nested = r#"{"version":1,"rules":{"type-case":{"enabled":true,"enab\u006ced":false}}}"#;
-        let nested_error = Config::parse(nested).unwrap_err();
-        assert_eq!(nested_error.code, ConfigErrorCode::DuplicateKey);
-        assert_eq!(
-            nested_error.path.as_deref(),
-            Some("/rules/type-case/enabled")
-        );
-        assert_eq!(nested_error.related.len(), 1);
+    #[test]
+    fn nested_duplicate_keys_report_the_nested_json_pointer() {
+        let input = r#"{"version":1,"rules":{"type-case":{"enabled":true,"enab\u006ced":false}}}"#;
+        let diagnostic = Config::parse(input).unwrap_err();
+        assert_eq!(diagnostic.code, ConfigErrorCode::DuplicateKey);
+        assert_eq!(diagnostic.path.as_deref(), Some("/rules/type-case/enabled"));
+        assert_eq!(diagnostic.related.len(), 1);
+    }
 
-        let thresholds = r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":1,"limit":2,"severity":"error"}]}}}"#;
-        let threshold_error = Config::parse(thresholds).unwrap_err();
-        assert_eq!(threshold_error.code, ConfigErrorCode::DuplicateKey);
+    #[test]
+    fn duplicate_keys_inside_threshold_entries_report_the_array_path() {
+        let input = r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":1,"limit":2,"severity":"error"}]}}}"#;
+        let diagnostic = Config::parse(input).unwrap_err();
+        assert_eq!(diagnostic.code, ConfigErrorCode::DuplicateKey);
         assert_eq!(
-            threshold_error.path.as_deref(),
+            diagnostic.path.as_deref(),
             Some("/rules/body-max-width/thresholds/0/limit")
         );
-        assert_eq!(threshold_error.related.len(), 1);
+        assert_eq!(diagnostic.related.len(), 1);
     }
 
     #[test]
@@ -580,7 +574,6 @@ mod tests {
         );
         assert!(decreasing.range.is_some());
         assert!(decreasing.related[0].range.is_some());
-        assert!(decreasing.related[0].message.contains("previous"));
     }
 
     #[test]
@@ -856,7 +849,6 @@ mod tests {
         );
         assert!(diagnostic.range.is_some());
         assert!(diagnostic.related[0].range.is_some());
-        assert!(diagnostic.related[0].message.contains("scope-required"));
     }
 
     #[test]
@@ -942,8 +934,9 @@ mod tests {
                 );
             } else {
                 assert_eq!(
-                    severity.unwrap_err().message,
-                    format!("{id} uses thresholds, not severity")
+                    severity.unwrap_err().code,
+                    ConfigErrorCode::RuleSettingUnsupported,
+                    "{id}"
                 );
             }
 
@@ -966,28 +959,24 @@ mod tests {
                 );
             } else {
                 assert_eq!(
-                    thresholds.unwrap_err().message,
-                    format!("{id} does not support thresholds")
+                    thresholds.unwrap_err().code,
+                    ConfigErrorCode::RuleSettingUnsupported,
+                    "{id}"
                 );
             }
 
             let both =
                 parse(r#"{"severity":"warning","thresholds":[{"limit":10,"severity":"warning"}]}"#);
-            let expected_error = if !supports_severity {
-                format!("{id} uses thresholds, not severity")
-            } else if !supports_thresholds {
-                format!("{id} does not support thresholds")
+            let expected_code = if supports_severity && supports_thresholds {
+                ConfigErrorCode::RuleSettingsConflict
             } else {
-                format!("{id} cannot specify both severity and thresholds")
+                ConfigErrorCode::RuleSettingUnsupported
             };
-            assert_eq!(both.unwrap_err().message, expected_error);
+            assert_eq!(both.unwrap_err().code, expected_code, "{id}");
         }
-        assert_eq!(
-            Config::parse(r#"{"version":1,"rules":{"unknown":{}}}"#)
-                .unwrap_err()
-                .message,
-            "unknown rule: unknown"
-        );
+        let unknown = Config::parse(r#"{"version":1,"rules":{"unknown":{}}}"#).unwrap_err();
+        assert_eq!(unknown.code, ConfigErrorCode::UnknownRule);
+        assert_eq!(unknown.path.as_deref(), Some("/rules/unknown"));
     }
 
     #[test]

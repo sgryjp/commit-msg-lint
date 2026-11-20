@@ -1,9 +1,8 @@
 use commit_msg_lint::{
     config::{Config, ConfigDiagnostic},
-    lint::lint,
+    lint::{Diagnostic as LintDiagnostic, lint},
 };
 use serde::Serialize;
-use serde_json::json;
 use wasm_bindgen::prelude::*;
 
 /// Returns the built-in defaults as plain, pretty-printed JSON.
@@ -22,44 +21,36 @@ pub fn lint_message(message: &str, config: &str) -> Result<String, String> {
         match Config::parse(config) {
             Ok(config) => config,
             Err(diagnostic) => {
-                return Ok(serialize_response(Vec::new(), vec![diagnostic]));
+                return serialize_response(Vec::new(), vec![diagnostic]);
             }
         }
     };
-    let diagnostics = lint(message, &config)
-        .into_iter()
-        .map(|diagnostic| LintDiagnosticJson {
-            line: diagnostic.line,
-            rule: diagnostic.rule,
-            severity: diagnostic.severity.to_string(),
-            message: diagnostic.message,
-        })
-        .collect();
-    Ok(serialize_response(diagnostics, Vec::new()))
+    serialize_response(lint(message, &config), Vec::new())
 }
 
 #[derive(Serialize)]
-struct LintDiagnosticJson {
-    line: usize,
-    rule: &'static str,
-    severity: String,
-    message: String,
+struct LintResponse {
+    #[serde(rename = "lintDiagnostics")]
+    lint_diagnostics: Vec<LintDiagnostic>,
+    #[serde(rename = "configDiagnostics")]
+    config_diagnostics: Vec<ConfigDiagnostic>,
 }
 
 fn serialize_response(
-    lint_diagnostics: Vec<LintDiagnosticJson>,
+    lint_diagnostics: Vec<LintDiagnostic>,
     config_diagnostics: Vec<ConfigDiagnostic>,
-) -> String {
-    json!({
-        "lintDiagnostics": lint_diagnostics,
-        "configDiagnostics": config_diagnostics,
+) -> Result<String, String> {
+    serde_json::to_string(&LintResponse {
+        lint_diagnostics,
+        config_diagnostics,
     })
-    .to_string()
+    .map_err(|error| format!("could not serialize diagnostics: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn response(message: &str, config: &str) -> serde_json::Value {
         serde_json::from_str(&lint_message(message, config).unwrap()).unwrap()

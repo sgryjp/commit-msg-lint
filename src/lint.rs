@@ -1,8 +1,9 @@
+use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{Config, Severity};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Diagnostic {
     pub line: usize,
     pub rule: &'static str,

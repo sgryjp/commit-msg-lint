@@ -15,29 +15,36 @@ struct SourceLocation {
     path: Option<String>,
 }
 
+fn config_range(range: jsonc_parser::common::Range) -> ConfigRange {
+    ConfigRange {
+        start: range.start,
+        end: range.end,
+    }
+}
+
 impl SourceLocation {
-    fn at(range: impl Into<ConfigRange>, path: impl Into<String>) -> Self {
+    fn at(range: jsonc_parser::common::Range, path: impl Into<String>) -> Self {
         Self {
-            range: Some(range.into()),
+            range: Some(config_range(range)),
             path: Some(path.into()),
         }
     }
 
-    fn without_path(range: impl Into<ConfigRange>) -> Self {
+    fn syntax_range(range: jsonc_parser::common::Range) -> Self {
         Self {
-            range: Some(range.into()),
+            range: Some(config_range(range)),
             path: None,
         }
     }
 
-    fn missing(path: impl Into<String>) -> Self {
+    fn missing_field(path: impl Into<String>) -> Self {
         Self {
             range: None,
             path: Some(path.into()),
         }
     }
 
-    fn unlocated() -> Self {
+    fn defaulted() -> Self {
         Self {
             range: None,
             path: None,
@@ -80,7 +87,7 @@ impl Config {
                 ConfigDiagnostic::new(
                     ConfigErrorCode::SyntaxError,
                     error.to_string(),
-                    SourceLocation::without_path(error.range()),
+                    SourceLocation::syntax_range(error.range()),
                 )
             })?;
         let Some(value) = parsed.value else {
@@ -88,7 +95,10 @@ impl Config {
             return Err(ConfigDiagnostic::new(
                 ConfigErrorCode::SyntaxError,
                 "expected a JSONC value",
-                SourceLocation::without_path(ConfigRange { start: end, end }),
+                SourceLocation {
+                    range: Some(ConfigRange { start: end, end }),
+                    path: None,
+                },
             ));
         };
 
@@ -102,11 +112,11 @@ impl Config {
 fn validate_tree(value: &Value<'_>, path: &str) -> Result<(), ConfigDiagnostic> {
     match value {
         Value::Object(object) => {
-            let mut seen = HashMap::<String, ConfigRange>::new();
+            let mut seen = HashMap::<String, jsonc_parser::common::Range>::new();
             for property in &object.properties {
                 let key = property.name.as_str();
                 let property_path = join_path(path, key);
-                let key_range = property.name.range().into();
+                let key_range = property.name.range();
                 if let Some(previous_range) = seen.get(key) {
                     return Err(ConfigDiagnostic::new(
                         ConfigErrorCode::DuplicateKey,
@@ -509,7 +519,7 @@ fn validate_cross_settings(
             Some(location) => ConfigRelatedInformation::new("type-enum is enabled here", location),
             None => ConfigRelatedInformation::new(
                 "type-enum is enabled by default",
-                SourceLocation::unlocated(),
+                SourceLocation::defaulted(),
             ),
         };
         return Err(ConfigDiagnostic::new(
@@ -542,7 +552,7 @@ fn validate_cross_settings(
         return Err(ConfigDiagnostic::new(
             ConfigErrorCode::ScopeEnumWithoutAllowedScopes,
             "scope-enum requires allowed-scopes",
-            SourceLocation::missing(pointer(&["conventional", "allowed-scopes"])),
+            SourceLocation::missing_field(pointer(&["conventional", "allowed-scopes"])),
         )
         .with_related(ConfigRelatedInformation::new(
             "scope-enum is enabled here",
@@ -706,7 +716,7 @@ fn missing_field(name: &str, path: &str) -> ConfigDiagnostic {
     ConfigDiagnostic::new(
         ConfigErrorCode::MissingField,
         format!("missing field: {name}"),
-        SourceLocation::missing(path),
+        SourceLocation::missing_field(path),
     )
 }
 

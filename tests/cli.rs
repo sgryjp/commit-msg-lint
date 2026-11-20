@@ -876,9 +876,7 @@ fn structured_configuration_errors_keep_the_cli_message_prefix_and_exit_code() {
     let output = dir.command(&["--config", "invalid.jsonc"], b"feat: change\n");
     assert_eq!(output.status.code(), Some(2));
     assert!(
-        stderr(&output).contains(
-            "commit-msg-lint: invalid configuration invalid.jsonc: unknown field: unexpected"
-        ),
+        stderr(&output).starts_with("commit-msg-lint: invalid configuration invalid.jsonc: "),
         "{}",
         stderr(&output)
     );

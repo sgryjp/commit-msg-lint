@@ -50,9 +50,9 @@ the parser applies the built-in defaults for omitted settings.
 
 The Rust API `Config::parse` returns one `ConfigDiagnostic` on failure. Its `code` is a stable,
 non-exhaustive `ConfigErrorCode`; callers should handle known codes and still display `message` for
-codes added by a later release. `message` is intended for people and may change. A diagnostic has no
-severity because every configuration diagnostic is an error. This is a breaking Rust API change:
-the previous error type was `String`.
+codes added by a later release. `message` is intended for people and may change. A Configuration
+Diagnostic has no severity; all configuration diagnostics are errors. This is a breaking Rust API
+change: the previous error type was `String`.
 
 The JSON representation always includes every field. A missing optional location is `null`, and
 `related` is an empty array when no other location is relevant:
@@ -70,12 +70,13 @@ The JSON representation always includes every field. A missing optional location
 `range` uses UTF-8 byte offsets and a half-open interval `[start, end)` into the original
 configuration text. An empty interval can identify EOF. `path` is a JSON Pointer with the standard
 `~0` and `~1` escapes. The empty string `""` is the root path; `null` means that the path is
-unknown. Missing fields have the path where the field belongs and no range. Each `related` item
-contains a `message`, optional `range`, and optional `path`; absent values are `null`. An implicit
-built-in default can be identified in a related message without an input range.
+unknown. Missing fields have the path where the field belongs and no range. Each Related
+Information item contains a `message`, optional `range`, and optional `path`; absent values are
+`null`. An implicit built-in default can be identified in a related message without an input range.
 
-The parser returns one deterministic diagnostic per invalid input. It rejects JSONC syntax errors,
-duplicate keys (including keys that become equal after escape decoding), unknown fields and Rules,
+The parser returns one deterministic Configuration Diagnostic per invalid input. It rejects JSONC
+syntax errors, duplicate keys (including keys that become equal after escape decoding), unknown
+fields and Rules,
 type and enum errors, explicit `null`, unsupported versions, invalid values, and invalid Rule
 combinations. The stable codes are:
 
@@ -104,19 +105,19 @@ combinations. The stable codes are:
 
 The WebAssembly `lint` function returns a JSON string with separate `lintDiagnostics` and
 `configDiagnostics` arrays. This is a breaking change from its previous JSON-array response. A valid
-configuration puts lint results in the first array and leaves the second empty. An invalid
-configuration skips linting and returns one configuration diagnostic in the second array.
+configuration puts Lint Diagnostics in the first array and leaves the second empty. An invalid
+configuration skips linting and returns one Configuration Diagnostic in the second array.
 Whitespace-only configuration continues to use built-in defaults. The Web demo displays
-configuration messages as errors and continues to distinguish lint warnings from lint errors.
+configuration messages as errors and distinguishes warning from error Lint Diagnostics.
 
 The CLI keeps its existing configuration-error presentation and exit behavior:
 `invalid configuration <path>: <message>` on standard error and exit code `2`. Configuration
-parsing diagnostics do not cover file discovery, file I/O, or UTF-8 reading errors.
+Diagnostics do not cover file discovery, file I/O, or UTF-8 reading errors.
 
 The AST retains duplicate keys and source ranges that typed deserialization would discard. Using it
 keeps the JSONC parser authoritative and lets the CLI and WebAssembly share one validation path,
 though it requires the parser to map configuration fields explicitly. This contract reports one
-error; collecting multiple diagnostics and converting them to LSP positions remain out of scope.
+error; collecting multiple Configuration Diagnostics and converting them to LSP positions remain out of scope.
 
 ## Finding a configuration file
 
