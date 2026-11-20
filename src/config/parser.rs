@@ -617,16 +617,16 @@ fn expect_unsigned(value: &Value<'_>, path: &str) -> Result<u64, ConfigDiagnosti
     };
     match parsed {
         Some(number) => Ok(number),
-        None => Err(integer_out_of_range(value, path)),
+        None => Err(unsigned_integer_conversion_failed(value, path)),
     }
 }
 
 fn expect_usize(value: &Value<'_>, path: &str) -> Result<usize, ConfigDiagnostic> {
     let number = expect_unsigned(value, path)?;
-    usize::try_from(number).map_err(|_| integer_out_of_range(value, path))
+    usize::try_from(number).map_err(|_| unsigned_integer_conversion_failed(value, path))
 }
 
-fn integer_out_of_range(value: &Value<'_>, path: &str) -> ConfigDiagnostic {
+fn unsigned_integer_conversion_failed(value: &Value<'_>, path: &str) -> ConfigDiagnostic {
     ConfigDiagnostic::new(
         ConfigErrorCode::TypeMismatch,
         "expected an unsigned integer in range",

@@ -51,8 +51,7 @@ the parser applies the built-in defaults for omitted settings.
 The Rust API `Config::parse` returns one `ConfigDiagnostic` on failure. Its `code` is a stable,
 non-exhaustive `ConfigErrorCode`; callers should handle known codes and still display `message` for
 codes added by a later release. `message` is intended for people and may change. A Configuration
-Diagnostic has no severity; all configuration diagnostics are errors. This is a breaking Rust API
-change: the previous error type was `String`.
+Diagnostic has no severity; all configuration diagnostics are errors.
 
 The JSON representation always includes every field. A missing optional location is `null`, and
 `related` is an empty array when no other location is relevant:
@@ -76,9 +75,8 @@ Information item contains a `message`, optional `range`, and optional `path`; ab
 
 The parser returns one deterministic Configuration Diagnostic per invalid input. It rejects JSONC
 syntax errors, duplicate keys (including keys that become equal after escape decoding), unknown
-fields and Rules,
-type and enum errors, explicit `null`, unsupported versions, invalid values, and invalid Rule
-combinations. The stable codes are:
+fields and Rules, type and enum errors, explicit `null`, unsupported versions, invalid values, and
+invalid Rule combinations. The stable codes are:
 
 | Code | Meaning |
 | --- | --- |
@@ -104,20 +102,15 @@ combinations. The stable codes are:
 | `config.invalid-header-pattern` | Header pattern is not a valid regex-lite expression |
 
 The WebAssembly `lint` function returns a JSON string with separate `lintDiagnostics` and
-`configDiagnostics` arrays. This is a breaking change from its previous JSON-array response. A valid
-configuration puts Lint Diagnostics in the first array and leaves the second empty. An invalid
-configuration skips linting and returns one Configuration Diagnostic in the second array.
+`configDiagnostics` arrays. A valid configuration puts Lint Diagnostics in the first array and
+leaves the second empty. An invalid configuration skips linting and returns one Configuration
+Diagnostic in the second array.
 Whitespace-only configuration continues to use built-in defaults. The Web demo displays
 configuration messages as errors and distinguishes warning from error Lint Diagnostics.
 
 The CLI keeps its existing configuration-error presentation and exit behavior:
 `invalid configuration <path>: <message>` on standard error and exit code `2`. Configuration
 Diagnostics do not cover file discovery, file I/O, or UTF-8 reading errors.
-
-The AST retains duplicate keys and source ranges that typed deserialization would discard. Using it
-keeps the JSONC parser authoritative and lets the CLI and WebAssembly share one validation path,
-though it requires the parser to map configuration fields explicitly. This contract reports one
-error; collecting multiple Configuration Diagnostics and converting them to LSP positions remain out of scope.
 
 ## Finding a configuration file
 
