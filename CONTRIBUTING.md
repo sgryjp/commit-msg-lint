@@ -108,6 +108,10 @@ and can also be run manually. The repository's GitHub Pages source must be set t
 
 ## Markdown documents
 
+Write user-facing documentation for developers familiar with Git and the command line. Avoid
+explaining basic concepts unnecessarily, but explain this tool's behavior, limitations, and
+important differences from Git. Use clear, concise language without omitting important conditions.
+
 The user-facing references describe the current implementation. When changing CLI behavior,
 configuration, or Rules, update the relevant documents and examples alongside the code and tests.
 When updating the `unicode-width` crate or Unicode data, update the documented versions and
