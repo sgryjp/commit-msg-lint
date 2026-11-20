@@ -53,7 +53,8 @@ commit-msg-lint --edit "$1"
 
 The CLI does not install the hook, and not every Git commit path invokes it. Git passes the hook
 its message before final cleanup. The same hook command works with the CLI's default
-[message filtering](#message-filtering).
+[message filtering](#message-filtering). For setup options and troubleshooting, see the
+[Git hook integration guide](git-hooks.md).
 
 ## Input
 
