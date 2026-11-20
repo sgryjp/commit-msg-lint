@@ -19,9 +19,11 @@ feature. Group them by area; prioritize individual items when they are triaged.
 
 ## Integration and extensibility
 
-- [ ] After addressing Git message cleanup, document hook setup for private trials with Git 2.54+
-  config-based hooks and for shared use with pre-commit and prek. Evaluate providing a pre-commit
-  hook manifest.
+- [ ] Decide on a license; no license file is currently provided.
+- [ ] Decide which installation and distribution channels to support beyond building from a
+  checkout and the existing pre-commit hook.
+- [ ] Decide what platform guarantees to offer, including Windows hook behavior.
+- [ ] Decide whether the Rust library API is a supported, stable embedding interface.
 - [ ] Evaluate support for custom Rules or plugins.
 - [ ] Evaluate direct linting of Git history and commit ranges.
 - [ ] Evaluate hook installation and management.

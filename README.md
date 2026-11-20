@@ -1,16 +1,24 @@
 # commit-msg-lint
 
-A Rust CLI that checks commit messages using Conventional Commit Rules and a JSONC configuration.
+A Rust CLI that checks a single commit message against Conventional Commit Rules, with configurable
+limits and severities. [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/) without
+installing anything: it checks in-browser without the CLI's comment or scissors filtering. The
+message and configuration are not sent to a server.
 
 ## Design philosophy
 
-- Measure display width using East Asian character widths, not character counts.
+- Measure display width using East Asian character widths, not character counts. This better
+  reflects commit-log display, although terminal and font rendering can differ
+  ([ADR](docs/adr/0001-display-column-measurement.md)).
 - Separate recommended limits from required ones with warnings and errors, giving agents discretion
   to preserve meaning.
+- Approximate Git cleanup by default for editor and verbose messages, accepting that the CLI can
+  check different content from what Git retains
+  ([ADR, in Japanese](docs/adr/0002-default-message-filtering.md)).
 
-## Install and use
+## Install and check a message
 
-From a checkout with the Rust toolchain installed:
+From a checkout with the Rust toolchain installed, build and install the CLI:
 
 ```sh
 cargo install --path .
@@ -18,95 +26,108 @@ printf 'feat: add parser\n' | commit-msg-lint
 commit-msg-lint --edit .git/COMMIT_EDITMSG
 ```
 
-By default, the CLI reads `commit-msg-lint.jsonc` from the Git repository root, if present. Use
-`--config <path>` to select another file. With `--strict`, warnings result in exit code 1.
+For example, `printf 'feat:subject\n' | commit-msg-lint` reports:
 
-To use the CLI from an existing `commit-msg` Git hook, call:
-
-```sh
-commit-msg-lint --edit "$1"
+```text
+<stdin>:1: error[header-format] header does not match the Conventional Commit format
 ```
 
-The CLI does not install or manage hooks. It checks a single message from a file or standard input;
-Git history inspection and custom Rules are not supported. Not every Git commit path invokes the
-hook. For agent integrations, `commit-msg-lint --help` points to `--help-for-agents`, which prints
-[agent usage guidance](docs/agent-usage.md) without reading input or configuration.
+See [diagnostics and exit codes](docs/cli.md#diagnostics-and-exit-codes).
 
-By default, the CLI excludes Git comment lines and cuts the message at a scissors line before
-linting, for both standard input and `--edit`. This helps with editor and verbose commit messages,
-but can exclude content that Git retains, including comments in default `-m` / `-F` commits.
-The [CLI reference](docs/cli.md#message-filtering) explains the independent environment controls,
-the Git prefix lookup, and how to inspect a completed message as supplied. The public library and
-Web demo check the supplied message without this filtering.
+## Git hook integrations
 
-By default, recognized Git-generated and hosting-service Header forms are silently ignored in
-entirety, including width and severity checks. Matching is text-based, so it can also exclude
-manually written messages. Configure or disable these patterns as described in
-[ignored messages](docs/configuration.md#ignored-messages).
+The CLI does not install hooks, and not every commit path runs `commit-msg`. These consumer
+recipes are separate from this repository's [development hooks](CONTRIBUTING.md#git-hooks).
 
-## pre-commit
+### pre-commit
 
-This repository defines a `commit-msg` hook for [pre-commit](https://pre-commit.com/). Add it to
-your `.pre-commit-config.yaml`:
+Add the hook to `.pre-commit-config.yaml`, using a release tag or commit containing
+`.pre-commit-hooks.yaml`. This example uses tag `0.0.2`:
 
 ```yaml
 repos:
   - repo: https://github.com/sgryjp/commit-msg-lint
-    rev: <tag-or-commit-containing-this-hook>
+    rev: 0.0.2
     hooks:
       - id: commit-msg-lint
 ```
 
-Replace the placeholder with a release tag or commit SHA whose tree contains
-`.pre-commit-hooks.yaml`; the placeholder is not an installable revision. Install the Git hook with:
+Install the `commit-msg` stage explicitly; plain `pre-commit install` installs a different stage:
 
 ```sh
 pre-commit install --hook-type commit-msg
 ```
 
-This installs the `commit-msg` stage, which a plain `pre-commit install` does not enable. On its
-first run, pre-commit creates a Rust environment and builds the CLI. If `cargo --version` succeeds,
-pre-commit uses the system toolchain; otherwise, it bootstraps Rust through rustup and installs the
-stable toolchain by default. This may download rustup and Rust components, so bootstrapping requires
-network access. Cargo may also need network access to fetch uncached crate dependencies for the
-build. Restricted or offline environments must provide the needed toolchain and dependencies or
-allow those downloads. The Rust setup runs `cargo install --bins` without `--locked`, so Cargo may
-resolve dependencies without following the repository's `Cargo.lock`.
+The first run builds the CLI and may need network access. See the
+[Git hook guide](docs/git-hooks.md) for prerequisites, offline use, strict mode, and
+troubleshooting.
 
-Warnings succeed by default, in keeping with the distinction between recommended and required
-limits. The hook displays diagnostics even when it succeeds, so these warnings remain visible. To
-make warnings fail, override the hook arguments in your configuration:
+### Existing commit-msg hook
 
-```yaml
-      - id: commit-msg-lint
-        args: [--strict, --edit]
+In an existing hook, pass Git's message file argument to the installed CLI:
+
+```sh
+commit-msg-lint --edit "$1"
 ```
 
-The hook definition uses `entry: commit-msg-lint` and supplies `--edit` through `args`. When you
-override `args` for strict mode, include both options; pre-commit appends the message filename after
-them, so the same hook ID works in either mode.
+### Config-based hook
 
-The CLI's default comment and scissors filtering is an approximation, not Git's final message
-cleanup. For example, the CLI removes comment lines by default, while Git's default cleanup for
-`-m` and `-F` commits retains them; Git may also remove whitespace that the CLI checks. See the
-[message filtering details](docs/cli.md#message-filtering) before relying on either behavior.
+For a lightweight local trial with Git 2.54 or later, first install the CLI and ensure it is on
+Git's hook `PATH`. Run once from the repository where you want to check messages:
 
-By default, recognized generated messages—including merge, revert, and autosquash subjects—are
-ignored in full, even with `--strict`. Matching is based on text, so a manually written message can
-also be ignored. See [ignored messages](docs/configuration.md#ignored-messages) for the patterns and
-limits.
+```sh
+git config set --local hook.commit-msg-lint.command 'commit-msg-lint --edit'
+git config set --local --append hook.commit-msg-lint.event commit-msg
+```
 
-## Web demo
+Git supplies the message filename to the configured command. Local configuration is not shared
+with other clones. Configured hooks run alongside an existing hook, so a hook that also runs this
+linter can cause duplicate checks. See the [Git hook guide](docs/git-hooks.md#config-based-hooks)
+for inspection and removal.
 
-[Try the web demo](https://sgryjp.github.io/commit-msg-lint/) to check a commit message with an
-optional JSONC configuration, without installing the CLI. The linter runs in your browser; the
-message and configuration are not sent to a server. The demo checks the supplied message without
-Git comment removal or scissors truncation.
+## Configure the linter
+
+The built-in defaults apply when no configuration is found; `commit-msg-lint.jsonc` at the Git
+repository root overrides selected settings. Use `--config <path>` to select a file explicitly.
+From the repository root, generate editable defaults or a schema matching the installed CLI with:
+
+```sh
+commit-msg-lint --print-default-config > commit-msg-lint.jsonc
+commit-msg-lint --print-config-schema > commit-msg-lint.schema.json
+```
+
+Redirection overwrites the destination files. See the
+[configuration reference](docs/configuration.md) for discovery and schema compatibility, and the
+[Rule defaults](docs/configuration.md#built-in-rules). The
+[JSONC decision record](docs/adr/0003-jsonc-configuration.md) explains the format choice.
+
+## Caveats and current limitations
+
+- Warnings can print while the command succeeds; `--strict` makes them fail. See
+  [exit codes](docs/cli.md#diagnostics-and-exit-codes).
+- CLI comment and scissors filtering is enabled by default and approximates Git cleanup, so the
+  checked content can differ from what Git retains. See [filtering](docs/cli.md#message-filtering).
+- By default, recognized generated-message Headers bypass all Rules, even with `--strict`; matching
+  is based on text, not provenance. See [ignored messages](docs/configuration.md#ignored-messages).
+- History or range linting, custom Rules, and hook installation are not currently supported.
+
+## Using from agents
+
+Run `commit-msg-lint --help-for-agents` or read the [agent usage guide](docs/agent-usage.md).
 
 ## Reference
 
-- [CLI](docs/cli.md): options, input, diagnostics, and exit codes
-- [Configuration](docs/configuration.md): file format, defaults, and Rule settings
+- [CLI](docs/cli.md): options, [filtering](docs/cli.md#message-filtering), and
+  [diagnostics and exit codes](docs/cli.md#diagnostics-and-exit-codes)
+- [Configuration](docs/configuration.md): [defaults](docs/configuration.md#built-in-rules),
+  [ignored messages](docs/configuration.md#ignored-messages), and Rule settings
 - [Message format](docs/message-format.md): parsing and Rule behavior
+- [Agent usage](docs/agent-usage.md) and [Git hooks](docs/git-hooks.md)
+- [Glossary](GLOSSARY.md) and [decision records](docs/adr/)
 
-For development and documentation checks, see [Contributing](CONTRIBUTING.md).
+## Development
+
+See [Contributing](CONTRIBUTING.md) for development and validation, and the
+[Changelog](CHANGELOG.md) for release history. There is currently no license file. Licensing,
+distribution channels, platform guarantees, and library API support remain open maintainer
+decisions; see [TODO](TODO.md).
