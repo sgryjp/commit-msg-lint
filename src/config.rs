@@ -1,11 +1,126 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use jsonc_parser::{ParseOptions, parse_to_serde_value};
+use jsonc_parser::ParseOptions;
 use serde::{Deserialize, Serialize};
 
 pub const CONFIG_SCHEMA_URL: &str =
     "https://sgryjp.github.io/commit-msg-lint/commit-msg-lint.schema.json";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct ConfigRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl From<jsonc_parser::common::Range> for ConfigRange {
+    fn from(range: jsonc_parser::common::Range) -> Self {
+        Self {
+            start: range.start,
+            end: range.end,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[non_exhaustive]
+pub enum ConfigErrorCode {
+    #[serde(rename = "config.syntax-error")]
+    SyntaxError,
+    #[serde(rename = "config.duplicate-key")]
+    DuplicateKey,
+    #[serde(rename = "config.missing-field")]
+    MissingField,
+    #[serde(rename = "config.unknown-field")]
+    UnknownField,
+    #[serde(rename = "config.unknown-rule")]
+    UnknownRule,
+    #[serde(rename = "config.type-mismatch")]
+    TypeMismatch,
+    #[serde(rename = "config.null-not-allowed")]
+    NullNotAllowed,
+    #[serde(rename = "config.invalid-enum")]
+    InvalidEnum,
+    #[serde(rename = "config.unsupported-version")]
+    UnsupportedVersion,
+    #[serde(rename = "config.out-of-range")]
+    OutOfRange,
+    #[serde(rename = "config.rule-setting-unsupported")]
+    RuleSettingUnsupported,
+    #[serde(rename = "config.rule-settings-conflict")]
+    RuleSettingsConflict,
+    #[serde(rename = "config.thresholds-empty")]
+    ThresholdsEmpty,
+    #[serde(rename = "config.threshold-limits-not-increasing")]
+    ThresholdLimitsNotIncreasing,
+    #[serde(rename = "config.threshold-severity-decreases")]
+    ThresholdSeverityDecreases,
+    #[serde(rename = "config.empty-types-while-type-enum-enabled")]
+    EmptyTypesWhileTypeEnumEnabled,
+    #[serde(rename = "config.scope-required-with-empty-allowed-scopes")]
+    ScopeRequiredWithEmptyAllowedScopes,
+    #[serde(rename = "config.scope-enum-without-allowed-scopes")]
+    ScopeEnumWithoutAllowedScopes,
+    #[serde(rename = "config.empty-header-pattern")]
+    EmptyHeaderPattern,
+    #[serde(rename = "config.invalid-header-pattern")]
+    InvalidHeaderPattern,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConfigRelatedInformation {
+    pub message: String,
+    pub range: Option<ConfigRange>,
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ConfigDiagnostic {
+    pub code: ConfigErrorCode,
+    pub message: String,
+    pub range: Option<ConfigRange>,
+    pub path: Option<String>,
+    pub related: Vec<ConfigRelatedInformation>,
+}
+
+impl ConfigDiagnostic {
+    fn new(
+        code: ConfigErrorCode,
+        message: impl Into<String>,
+        range: Option<ConfigRange>,
+        path: Option<String>,
+    ) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            range,
+            path,
+            related: Vec::new(),
+        }
+    }
+
+    fn with_related(
+        mut self,
+        message: impl Into<String>,
+        range: Option<ConfigRange>,
+        path: Option<String>,
+    ) -> Self {
+        self.related.push(ConfigRelatedInformation {
+            message: message.into(),
+            range,
+            path,
+        });
+        self
+    }
+}
+
+impl fmt::Display for ConfigDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ConfigDiagnostic {}
 
 const JSONC_OPTIONS: ParseOptions = ParseOptions {
     allow_comments: true,
@@ -312,6 +427,9 @@ struct RawRule {
     thresholds: Option<Vec<Threshold>>,
 }
 
+#[path = "config_diagnostics.rs"]
+mod diagnostics;
+
 impl Config {
     /// Returns a plain JSON representation of the built-in defaults.
     pub fn default_json() -> Result<String, serde_json::Error> {
@@ -350,83 +468,351 @@ impl Config {
         })
     }
 
-    pub fn parse(input: &str) -> Result<Self, String> {
-        let raw: RawConfig =
-            parse_to_serde_value(input, &JSONC_OPTIONS).map_err(|e| e.to_string())?;
-        if raw.version != 1 {
-            return Err("version must be 1".into());
-        }
-
-        let mut config = Self::default();
-        config.ignore = raw.ignore;
-        if let Some(types) = raw.conventional.types {
-            config.types = types;
-        }
-
-        config.rules.get_mut("scope-required").unwrap().enabled = raw.conventional.scope_required;
-        if let Some(scopes) = raw.conventional.allowed_scopes {
-            config.rules.get_mut("scope-enum").unwrap().enabled = true;
-            config.allowed_scopes = Some(scopes);
-        }
-        if let Some(width) = raw.display_width.ambiguous_width {
-            if !matches!(width, 1 | 2) {
-                return Err("ambiguous-width must be 1 or 2".into());
-            }
-            config.ambiguous_width = width;
-        }
-        for (id, override_rule) in raw.rules {
-            let metadata = RULE_METADATA
-                .iter()
-                .find(|metadata| metadata.id == id)
-                .ok_or_else(|| format!("unknown rule: {id}"))?;
-            let rule = config.rules.get_mut(&id).unwrap();
-            if let Some(enabled) = override_rule.enabled {
-                rule.enabled = enabled;
-            }
-            if let Some(severity) = override_rule.severity {
-                if !metadata.kind.supports_severity() {
-                    return Err(format!("{id} uses thresholds, not severity"));
-                }
-                rule.severity = severity;
-                for threshold in &mut rule.thresholds {
-                    threshold.severity = severity;
-                }
-            }
-            if let Some(thresholds) = override_rule.thresholds {
-                if !metadata.kind.supports_thresholds() {
-                    return Err(format!("{id} does not support thresholds"));
-                }
-                if override_rule.severity.is_some() {
-                    return Err(format!("{id} cannot specify both severity and thresholds"));
-                }
-                if thresholds.is_empty()
-                    || thresholds.windows(2).any(|pair| {
-                        pair[0].limit >= pair[1].limit || pair[0].severity > pair[1].severity
-                    })
-                {
-                    return Err(format!("{id} has invalid thresholds"));
-                }
-                rule.thresholds = thresholds;
-            }
-        }
-        if config.rules["type-enum"].enabled && config.types.is_empty() {
-            return Err("types must not be empty when type-enum is enabled".into());
-        }
-        if raw.conventional.scope_required
-            && config.allowed_scopes.as_ref().is_some_and(Vec::is_empty)
-        {
-            return Err("scope-required cannot be combined with empty allowed-scopes".into());
-        }
-        if config.rules["scope-enum"].enabled && config.allowed_scopes.is_none() {
-            return Err("scope-enum requires allowed-scopes".into());
-        }
-        Ok(config)
+    pub fn parse(input: &str) -> Result<Self, ConfigDiagnostic> {
+        diagnostics::parse(input)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_fields_report_a_stable_code_json_pointer_and_key_range() {
+        let error = Config::parse(r#"{"version":1,"unexpected":true}"#).unwrap_err();
+        assert_eq!(error.code, ConfigErrorCode::UnknownField);
+        assert_eq!(error.path.as_deref(), Some("/unexpected"));
+        assert_eq!(error.range, Some(ConfigRange { start: 13, end: 25 }));
+        assert!(!error.message.is_empty());
+        assert!(error.related.is_empty());
+    }
+
+    #[test]
+    fn duplicate_decoded_keys_point_to_the_later_key_and_relate_the_first() {
+        let input = r#"{"version":1,"version":2}"#;
+        let error = Config::parse(input).unwrap_err();
+        assert_eq!(error.code, ConfigErrorCode::DuplicateKey);
+        assert_eq!(error.path.as_deref(), Some("/version"));
+        assert_eq!(error.range, Some(ConfigRange { start: 13, end: 22 }));
+        assert_eq!(error.related.len(), 1);
+        assert_eq!(
+            error.related[0].range,
+            Some(ConfigRange { start: 1, end: 10 })
+        );
+
+        let escaped = r#"{"version":1,"ver\u0073ion":2}"#;
+        let escaped_error = Config::parse(escaped).unwrap_err();
+        let later_key = escaped.find("\"ver\\u0073ion\"").unwrap();
+        assert_eq!(escaped_error.code, ConfigErrorCode::DuplicateKey);
+        assert_eq!(escaped_error.path.as_deref(), Some("/version"));
+        assert_eq!(
+            escaped_error.range,
+            Some(ConfigRange {
+                start: later_key,
+                end: later_key + "\"ver\\u0073ion\"".len(),
+            })
+        );
+    }
+
+    #[test]
+    fn syntax_and_missing_field_diagnostics_retain_eof_and_absent_positions() {
+        let empty = Config::parse("").unwrap_err();
+        assert_eq!(empty.code, ConfigErrorCode::SyntaxError);
+        assert_eq!(empty.range, Some(ConfigRange { start: 0, end: 0 }));
+        assert_eq!(empty.path, None);
+
+        let malformed = Config::parse(r#"{"version":1"#).unwrap_err();
+        assert_eq!(malformed.code, ConfigErrorCode::SyntaxError);
+        assert!(malformed.range.is_some());
+        assert_eq!(malformed.path, None);
+
+        let missing =
+            Config::parse(r#"{"version":1,"rules":{"header-max-width":{"thresholds":[{}]}}}"#)
+                .unwrap_err();
+        assert_eq!(missing.code, ConfigErrorCode::MissingField);
+        assert_eq!(
+            missing.path.as_deref(),
+            Some("/rules/header-max-width/thresholds/0/limit")
+        );
+        assert_eq!(missing.range, None);
+    }
+
+    #[test]
+    fn threshold_and_rule_conflicts_report_primary_and_related_positions() {
+        let input = r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":10,"severity":"warning"},{"limit":10,"severity":"error"}]}}}"#;
+        let diagnostic = Config::parse(input).unwrap_err();
+        let later_limit = input.rfind("10").unwrap();
+        let previous_limit = input.find("10").unwrap();
+        assert_eq!(
+            diagnostic.code,
+            ConfigErrorCode::ThresholdLimitsNotIncreasing
+        );
+        assert_eq!(
+            diagnostic.path.as_deref(),
+            Some("/rules/body-max-width/thresholds/1/limit")
+        );
+        assert_eq!(
+            diagnostic.range,
+            Some(ConfigRange {
+                start: later_limit,
+                end: later_limit + 2
+            })
+        );
+        assert_eq!(
+            diagnostic.related[0].range,
+            Some(ConfigRange {
+                start: previous_limit,
+                end: previous_limit + 2
+            })
+        );
+
+        let conflict = Config::parse(
+            r#"{"version":1,"rules":{"body-max-width":{"severity":"warning","thresholds":[{"limit":10,"severity":"error"}]}}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(conflict.code, ConfigErrorCode::RuleSettingsConflict);
+        assert_eq!(
+            conflict.path.as_deref(),
+            Some("/rules/body-max-width/thresholds")
+        );
+        assert_eq!(
+            conflict.related[0].path.as_deref(),
+            Some("/rules/body-max-width/severity")
+        );
+        assert!(conflict.range.is_some());
+        assert!(conflict.related[0].range.is_some());
+    }
+
+    #[test]
+    fn each_published_configuration_failure_has_its_stable_code() {
+        let cases = [
+            ("", ConfigErrorCode::SyntaxError),
+            (
+                r#"{"version":1,"version":1}"#,
+                ConfigErrorCode::DuplicateKey,
+            ),
+            (r#"{}"#, ConfigErrorCode::MissingField),
+            (
+                r#"{"version":1,"extra":true}"#,
+                ConfigErrorCode::UnknownField,
+            ),
+            (
+                r#"{"version":1,"rules":{"not-a-rule":{}}}"#,
+                ConfigErrorCode::UnknownRule,
+            ),
+            (r#"{"version":"1"}"#, ConfigErrorCode::TypeMismatch),
+            (r#"{"version":null}"#, ConfigErrorCode::NullNotAllowed),
+            (
+                r#"{"version":1,"rules":{"type-case":{"severity":"fatal"}}}"#,
+                ConfigErrorCode::InvalidEnum,
+            ),
+            (r#"{"version":2}"#, ConfigErrorCode::UnsupportedVersion),
+            (
+                r#"{"version":1,"display-width":{"ambiguous-width":3}}"#,
+                ConfigErrorCode::OutOfRange,
+            ),
+            (
+                r#"{"version":1,"rules":{"header-max-width":{"severity":"error"}}}"#,
+                ConfigErrorCode::RuleSettingUnsupported,
+            ),
+            (
+                r#"{"version":1,"rules":{"body-max-width":{"severity":"error","thresholds":[{"limit":10,"severity":"error"}]}}}"#,
+                ConfigErrorCode::RuleSettingsConflict,
+            ),
+            (
+                r#"{"version":1,"rules":{"body-max-width":{"thresholds":[]}}}"#,
+                ConfigErrorCode::ThresholdsEmpty,
+            ),
+            (
+                r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":10,"severity":"warning"},{"limit":10,"severity":"error"}]}}}"#,
+                ConfigErrorCode::ThresholdLimitsNotIncreasing,
+            ),
+            (
+                r#"{"version":1,"rules":{"body-max-width":{"thresholds":[{"limit":10,"severity":"error"},{"limit":20,"severity":"warning"}]}}}"#,
+                ConfigErrorCode::ThresholdSeverityDecreases,
+            ),
+            (
+                r#"{"version":1,"conventional":{"types":[]}}"#,
+                ConfigErrorCode::EmptyTypesWhileTypeEnumEnabled,
+            ),
+            (
+                r#"{"version":1,"conventional":{"scope-required":true,"allowed-scopes":[]}}"#,
+                ConfigErrorCode::ScopeRequiredWithEmptyAllowedScopes,
+            ),
+            (
+                r#"{"version":1,"rules":{"scope-enum":{"enabled":true}}}"#,
+                ConfigErrorCode::ScopeEnumWithoutAllowedScopes,
+            ),
+            (
+                r#"{"version":1,"ignore":{"header-patterns":[""]}}"#,
+                ConfigErrorCode::EmptyHeaderPattern,
+            ),
+            (
+                r#"{"version":1,"ignore":{"header-patterns":["["]}}"#,
+                ConfigErrorCode::InvalidHeaderPattern,
+            ),
+        ];
+        for (input, expected_code) in cases {
+            let diagnostic = Config::parse(input).unwrap_err();
+            assert_eq!(diagnostic.code, expected_code, "{input}");
+            assert!(!diagnostic.message.is_empty(), "{input}");
+        }
+    }
+
+    #[test]
+    fn public_error_code_variants_serialize_to_the_documented_identifiers() {
+        let codes = [
+            (ConfigErrorCode::SyntaxError, "config.syntax-error"),
+            (ConfigErrorCode::DuplicateKey, "config.duplicate-key"),
+            (ConfigErrorCode::MissingField, "config.missing-field"),
+            (ConfigErrorCode::UnknownField, "config.unknown-field"),
+            (ConfigErrorCode::UnknownRule, "config.unknown-rule"),
+            (ConfigErrorCode::TypeMismatch, "config.type-mismatch"),
+            (ConfigErrorCode::NullNotAllowed, "config.null-not-allowed"),
+            (ConfigErrorCode::InvalidEnum, "config.invalid-enum"),
+            (
+                ConfigErrorCode::UnsupportedVersion,
+                "config.unsupported-version",
+            ),
+            (ConfigErrorCode::OutOfRange, "config.out-of-range"),
+            (
+                ConfigErrorCode::RuleSettingUnsupported,
+                "config.rule-setting-unsupported",
+            ),
+            (
+                ConfigErrorCode::RuleSettingsConflict,
+                "config.rule-settings-conflict",
+            ),
+            (ConfigErrorCode::ThresholdsEmpty, "config.thresholds-empty"),
+            (
+                ConfigErrorCode::ThresholdLimitsNotIncreasing,
+                "config.threshold-limits-not-increasing",
+            ),
+            (
+                ConfigErrorCode::ThresholdSeverityDecreases,
+                "config.threshold-severity-decreases",
+            ),
+            (
+                ConfigErrorCode::EmptyTypesWhileTypeEnumEnabled,
+                "config.empty-types-while-type-enum-enabled",
+            ),
+            (
+                ConfigErrorCode::ScopeRequiredWithEmptyAllowedScopes,
+                "config.scope-required-with-empty-allowed-scopes",
+            ),
+            (
+                ConfigErrorCode::ScopeEnumWithoutAllowedScopes,
+                "config.scope-enum-without-allowed-scopes",
+            ),
+            (
+                ConfigErrorCode::EmptyHeaderPattern,
+                "config.empty-header-pattern",
+            ),
+            (
+                ConfigErrorCode::InvalidHeaderPattern,
+                "config.invalid-header-pattern",
+            ),
+        ];
+        for (code, expected) in codes {
+            assert_eq!(serde_json::to_value(code).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn json_pointers_escape_keys_and_ranges_count_utf8_bytes_with_crlf() {
+        let input = "{\r\n  \"version\": 1,\r\n  \"conventional\": {\"types\": [\"😀\"]},\r\n  \"a~/b\": true\r\n}";
+        let error = Config::parse(input).unwrap_err();
+        let key_start = input.find("\"a~/b\"").unwrap();
+        assert_eq!(error.code, ConfigErrorCode::UnknownField);
+        assert_eq!(error.path.as_deref(), Some("/a~0~1b"));
+        assert_eq!(
+            error.range,
+            Some(ConfigRange {
+                start: key_start,
+                end: key_start + "\"a~/b\"".len(),
+            })
+        );
+    }
+
+    #[test]
+    fn related_settings_point_to_the_other_location_or_explain_defaults() {
+        let explicit = Config::parse(
+            r#"{"version":1,"conventional":{"types":[]},"rules":{"type-enum":{"enabled":true}}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(
+            explicit.code,
+            ConfigErrorCode::EmptyTypesWhileTypeEnumEnabled
+        );
+        assert_eq!(explicit.path.as_deref(), Some("/conventional/types"));
+        assert_eq!(
+            explicit.related[0].path.as_deref(),
+            Some("/rules/type-enum/enabled")
+        );
+        assert!(explicit.related[0].range.is_some());
+
+        let defaults = Config::parse(r#"{"version":1,"conventional":{"types":[]}}"#).unwrap_err();
+        assert_eq!(
+            defaults.code,
+            ConfigErrorCode::EmptyTypesWhileTypeEnumEnabled
+        );
+        assert!(defaults.related[0].range.is_none());
+        assert!(defaults.related[0].message.contains("by default"));
+
+        let missing =
+            Config::parse(r#"{"version":1,"rules":{"scope-enum":{"enabled":true}}}"#).unwrap_err();
+        assert_eq!(
+            missing.path.as_deref(),
+            Some("/conventional/allowed-scopes")
+        );
+        assert!(missing.range.is_none());
+        assert_eq!(
+            missing.related[0].path.as_deref(),
+            Some("/rules/scope-enum/enabled")
+        );
+        assert!(missing.related[0].range.is_some());
+    }
+
+    #[test]
+    fn scope_required_validation_uses_the_conventional_setting_before_rule_overrides() {
+        let input = r#"{"version":1,"conventional":{"scope-required":true,"allowed-scopes":[]},"rules":{"scope-required":{"enabled":false}}}"#;
+        let diagnostic = Config::parse(input).unwrap_err();
+        assert_eq!(
+            diagnostic.code,
+            ConfigErrorCode::ScopeRequiredWithEmptyAllowedScopes
+        );
+        assert_eq!(
+            diagnostic.path.as_deref(),
+            Some("/conventional/allowed-scopes")
+        );
+        assert_eq!(
+            diagnostic.related[0].path.as_deref(),
+            Some("/conventional/scope-required")
+        );
+        assert!(diagnostic.related[0].range.is_some());
+    }
+
+    #[test]
+    fn diagnostic_json_includes_every_field_and_is_deterministic() {
+        let input = r#"{"version":1,"first":true,"second":true}"#;
+        let first = Config::parse(input).unwrap_err();
+        let second = Config::parse(input).unwrap_err();
+        assert_eq!(first, second);
+        let json = serde_json::to_value(first).unwrap();
+        assert_eq!(json["code"], "config.unknown-field");
+        assert!(json["message"].is_string());
+        assert!(json["range"]["start"].is_number());
+        assert_eq!(json["path"], "/first");
+        assert_eq!(json["related"], serde_json::json!([]));
+
+        let root_type = Config::parse("[]").unwrap_err();
+        assert_eq!(root_type.path.as_deref(), Some(""));
+        assert!(root_type.related.is_empty());
+        assert_eq!(
+            serde_json::to_value(root_type).unwrap()["range"],
+            serde_json::json!({"start": 0, "end": 2})
+        );
+    }
 
     #[test]
     fn each_rule_preserves_its_defaults_and_supported_settings() {
@@ -489,7 +875,7 @@ mod tests {
                 );
             } else {
                 assert_eq!(
-                    severity.unwrap_err(),
+                    severity.unwrap_err().message,
                     format!("{id} uses thresholds, not severity")
                 );
             }
@@ -508,12 +894,12 @@ mod tests {
                     "{id}"
                 );
                 assert_eq!(
-                    parse(r#"{"thresholds":[]}"#).unwrap_err(),
-                    format!("{id} has invalid thresholds")
+                    parse(r#"{"thresholds":[]}"#).unwrap_err().code,
+                    ConfigErrorCode::ThresholdsEmpty
                 );
             } else {
                 assert_eq!(
-                    thresholds.unwrap_err(),
+                    thresholds.unwrap_err().message,
                     format!("{id} does not support thresholds")
                 );
             }
@@ -527,10 +913,12 @@ mod tests {
             } else {
                 format!("{id} cannot specify both severity and thresholds")
             };
-            assert_eq!(both.unwrap_err(), expected_error);
+            assert_eq!(both.unwrap_err().message, expected_error);
         }
         assert_eq!(
-            Config::parse(r#"{"version":1,"rules":{"unknown":{}}}"#).unwrap_err(),
+            Config::parse(r#"{"version":1,"rules":{"unknown":{}}}"#)
+                .unwrap_err()
+                .message,
             "unknown rule: unknown"
         );
     }

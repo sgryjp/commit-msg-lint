@@ -843,6 +843,25 @@ fn invalid_jsonc_configuration_is_a_cli_error() {
 }
 
 #[test]
+fn structured_configuration_errors_keep_the_cli_message_prefix_and_exit_code() {
+    let dir = TestDir::new();
+    fs::write(
+        dir.0.join("invalid.jsonc"),
+        r#"{"version":1,"unexpected":true}"#,
+    )
+    .unwrap();
+    let output = dir.command(&["--config", "invalid.jsonc"], b"feat: change\n");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains(
+            "commit-msg-lint: invalid configuration invalid.jsonc: unknown field: unexpected"
+        ),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
 fn malformed_inputs_and_configuration_are_errors() {
     let dir = TestDir::new();
     fs::write(dir.0.join("bad.jsonc"), r#"{ "version": 1, "unknown": 1 }"#).unwrap();

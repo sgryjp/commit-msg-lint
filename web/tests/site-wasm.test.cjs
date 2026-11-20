@@ -64,9 +64,17 @@ test("demo displays ignore defaults and applies configuration edits and reset", 
   config.dispatch("input");
   assert.deepEqual(result(), ["No problems found."]);
 
+  message.value = "bad header";
+  config.value = '{"version":1,"rules":{"header-format":{"severity":"warning"}}}';
+  config.dispatch("input");
+  assert.ok(elements.result.children.some(child => child.className === "warning"));
+  assert.ok(result().some(text => text.includes("warning[header-format]")));
+
+  message.value = `Merge branch feature\n\n${"x".repeat(100)}`;
   config.value = '{"version":1,"ignore":{"header-patterns":[""]}}';
   config.dispatch("input");
-  assert.match(result()[0], /invalid configuration:/);
+  assert.match(result()[0], /must not contain an empty pattern/);
+  assert.equal(elements.result.children[0].className, "error");
 
   elements["reset-config"].dispatch("click");
   assert.equal(message.value, `Merge branch feature\n\n${"x".repeat(100)}`);
