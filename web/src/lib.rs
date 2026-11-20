@@ -1,6 +1,6 @@
 use commit_msg_lint::{
     config::{Config, ConfigDiagnostic},
-    lint::{Diagnostic as LintDiagnostic, lint},
+    lint::{LintDiagnostic, lint},
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;

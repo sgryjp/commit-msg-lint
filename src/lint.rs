@@ -4,12 +4,14 @@ use unicode_width::UnicodeWidthStr;
 use crate::config::{Config, Severity};
 
 #[derive(Debug, Serialize)]
-pub struct Diagnostic {
+pub struct LintDiagnostic {
     pub line: usize,
     pub rule: &'static str,
     pub severity: Severity,
     pub message: String,
 }
+
+pub type Diagnostic = LintDiagnostic;
 
 struct Header<'a> {
     kind: &'a str,
@@ -94,14 +96,14 @@ fn forbidden_control(c: char) -> bool {
 
 struct Linter<'a> {
     config: &'a Config,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<LintDiagnostic>,
 }
 
 impl Linter<'_> {
     fn report(&mut self, line: usize, rule: &'static str, message: impl Into<String>) {
         let settings = &self.config.rules[rule];
         if settings.enabled {
-            self.diagnostics.push(Diagnostic {
+            self.diagnostics.push(LintDiagnostic {
                 line,
                 rule,
                 severity: settings.severity,
@@ -121,7 +123,7 @@ impl Linter<'_> {
             text.width()
         };
         if let Some(threshold) = settings.thresholds.iter().rev().find(|t| width > t.limit) {
-            self.diagnostics.push(Diagnostic {
+            self.diagnostics.push(LintDiagnostic {
                 line,
                 rule,
                 severity: threshold.severity,
@@ -190,7 +192,7 @@ fn filtered_lines<'a>(
 }
 
 /// Lints the original input without removing comments or scissors lines.
-pub fn lint(input: &str, config: &Config) -> Vec<Diagnostic> {
+pub fn lint(input: &str, config: &Config) -> Vec<LintDiagnostic> {
     lint_lines(&input_lines(input), config)
 }
 
@@ -204,14 +206,14 @@ pub fn lint_filtered(
     comment_prefix: &str,
     strip_comments: bool,
     cut_scissors: bool,
-) -> Vec<Diagnostic> {
+) -> Vec<LintDiagnostic> {
     lint_lines(
         &filtered_lines(input, comment_prefix, strip_comments, cut_scissors),
         config,
     )
 }
 
-fn lint_lines(lines: &[Line<'_>], config: &Config) -> Vec<Diagnostic> {
+fn lint_lines(lines: &[Line<'_>], config: &Config) -> Vec<LintDiagnostic> {
     let mut linter = Linter {
         config,
         diagnostics: Vec::new(),
@@ -560,7 +562,7 @@ mod tests {
             "feat: change\n# ------------------------ >8 ------------------------\ndiff\r",
             "feat: change\n\n\n",
         ] {
-            let describe = |diagnostics: Vec<Diagnostic>| {
+            let describe = |diagnostics: Vec<LintDiagnostic>| {
                 diagnostics
                     .into_iter()
                     .map(|d| (d.line, d.rule, d.severity, d.message))
