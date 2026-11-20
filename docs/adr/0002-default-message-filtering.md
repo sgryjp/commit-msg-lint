@@ -18,5 +18,5 @@ Git の最終結果の完全再現は保証せず、Git の指定と検査方針
 環境変数は Git の動作や入力ファイルを変更せず、検査対象だけを制御する。
 
 表示幅による測定と、警告・エラーを分けてエージェントの判断余地を残す既存方針は維持する。
-仕様と制約の詳細は[前処理とリントの設計](../design/commit-message-parsing-and-linting.md)を参照す
+仕様と制約の詳細は[前処理とリントの設計](../design/commit-message-parsing-and-linting.md)を参照す <!-- rumdl-disable-line MD089 -->
 る。

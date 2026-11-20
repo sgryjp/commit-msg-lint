@@ -2,7 +2,7 @@
 
 ## 状態と背景
 
-**状態: 実装済み・検証中。** 現行 CLI の使い方は [CLI リファレンス](../cli.md)を参照する。
+**状態: 実装済み・検証中。** 現行 CLI の使い方は [CLI リファレンス](../cli.md)を参照する。 <!-- rumdl-disable-line MD089 -->
 Windows 固有の動作と Git for Windows での実フック試験は未検証である。
 本設計は、以前の明示フックモードと CLI オプションによる個別制御の案を置き換える。
 判断理由は [ADR-0002](../adr/0002-default-message-filtering.md) に記録する。
@@ -18,7 +18,7 @@ Windows 固有の動作と Git for Windows での実フック試験は未検証�
 - Git の最終メッセージの完全再現はしない。実際には残る本文を検査から外す可能性も明示する。
 - コミットごとの方針は環境変数で指定し、共有設定を書き換えない。
 - 入力ファイルは変更せず、検査対象の行だけを選ぶ。
-- [README の設計方針](../../README.md#design-philosophy)に従い、表示幅で測定する。
+- [README の設計方針](../../README.md#design-philosophy)に従い、表示幅で測定する。 <!-- rumdl-disable-line MD089 -->
   警告とエラーの区別、および `--strict` の意味は変更しない。
 
 ## CLI の既定値と適用範囲

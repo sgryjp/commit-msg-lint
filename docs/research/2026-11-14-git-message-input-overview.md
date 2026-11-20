@@ -2,9 +2,11 @@
 
 調査日: 2026-11-14。入力経路とデータの違いを整理する。実装方針は決めない。
 
+<!-- rumdl-disable MD089 -->
 詳細なフック実測は[先行調査](2026-11-13-git-commit-message-input.md)を、検討中の実装方針は[設計
 案](../design/commit-message-parsing-and-linting.md)を参照する。Git 固有の実装挙動は、特記のない限り
 Git v2.54.0 のソースに基づく。
+<!-- rumdl-enable MD089 -->
 
 ## メッセージの生成元
 
@@ -83,7 +85,7 @@ scissors 行の既定形は次のとおりである。
 ターなしで使う既定では `#` 行も保存され得る。
 
 フックの引数は実効 cleanup 方式や `-v` の有無を伝えない。そのため、フック入力だけから最終結果を常に
-復元することはできない。詳細な条件と実測は[先行調査](2026-11-13-git-commit-message-input.md)を参照す
+復元することはできない。詳細な条件と実測は[先行調査](2026-11-13-git-commit-message-input.md)を参照す <!-- rumdl-disable-line MD089 -->
 る。
 
 ## 設計上の含意
@@ -96,5 +98,5 @@ scissors 行の既定形は次のとおりである。
 また、`--no-verify` や一部の操作では `commit-msg` が呼ばれない。フックだけで全経路を検査できるわけで
 はない。
 
-これらの違いは、README の[設計方針](../../README.md#design-philosophy)にある表示幅の測定と、警告・エ
+これらの違いは、README の[設計方針](../../README.md#design-philosophy)にある表示幅の測定と、警告・エ <!-- rumdl-disable-line MD089 -->
 ラーの使い分けを置き換えるものではない。
