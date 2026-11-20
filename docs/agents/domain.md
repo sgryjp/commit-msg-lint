@@ -21,7 +21,7 @@ terms or decisions actually get resolved.
 
 Single-context repo (most repos):
 
-```
+```text
 /
 ├── GLOSSARY.md
 ├── docs/adr/
@@ -32,7 +32,7 @@ Single-context repo (most repos):
 
 Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
 
-```
+```text
 /
 ├── GLOSSARY-MAP.md
 ├── docs/adr/                          ← system-wide decisions

@@ -1,0 +1,20 @@
+[global]
+# Keep emphasis as a list introduction, significant code-span spaces, and
+# untitled agent instructions. Footnote order and list spacing may vary.
+disable = ["MD036", "MD038", "MD041", "MD067", "MD076"]
+extend-enable = ["MD089"]
+
+[MD010]
+code-blocks = false
+
+[MD013]
+line-length = 120
+length-mode = "visual"
+
+[MD024]
+siblings-only = true
+
+[MD089]
+# Do not require spaces around punctuation and other symbols.
+symbols-after-cjk = ""
+symbols-before-cjk = ""

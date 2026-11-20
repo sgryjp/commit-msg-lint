@@ -311,7 +311,7 @@ GitHub Releases / Tags の一覧では、最新タグが `v0.19.1` であるこ�
 
 ## Sources
 
-- https://github.com/conventional-changelog/commitlint/tree/master/@commitlint/config-conventional
+- <https://github.com/conventional-changelog/commitlint/tree/master/@commitlint/config-conventional>
   — `src/index.ts` のデフォルトルール 12 個、`parserPreset`、`prompt.questions` を確認。
 - [commitlint.js.org: Reference / Rules](https://commitlint.js.org/reference/rules.html)
   — commitlint 本体の全ルール（`body-case`、`scope-enum` など）と既定値を確認。
@@ -388,32 +388,32 @@ GitHub Releases / Tags の一覧では、最新タグが `v0.19.1` であるこ�
   （`reference/community-projects.md` など）があることまでは把握したが、今回は一覧の内容を
   詳しく確認していない。
 
-[^cl-getstart]: https://commitlint.js.org/guides/getting-started.html
-[^cl-config]: https://commitlint.js.org/reference/configuration.html
-[^cl-conv-index]: https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint
+[^cl-getstart]: <https://commitlint.js.org/guides/getting-started.html>
+[^cl-config]: <https://commitlint.js.org/reference/configuration.html>
+[^cl-conv-index]: <https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint>
     Source file: `config-conventional/src/index.ts`.
-[^cl-rules]: https://commitlint.js.org/reference/rules.html
-[^cl-plugins]: https://commitlint.js.org/reference/plugins.html
-[^cl-local]: https://commitlint.js.org/guides/local-setup.html
-[^cl-ci]: https://commitlint.js.org/guides/ci-setup.html
-[^cl-cli]: https://commitlint.js.org/reference/cli.html
-[^cl-share]: https://commitlint.js.org/concepts/shareable-config.html
-[^cl-prompt]: https://commitlint.js.org/guides/use-prompt.html
+[^cl-rules]: <https://commitlint.js.org/reference/rules.html>
+[^cl-plugins]: <https://commitlint.js.org/reference/plugins.html>
+[^cl-local]: <https://commitlint.js.org/guides/local-setup.html>
+[^cl-ci]: <https://commitlint.js.org/guides/ci-setup.html>
+[^cl-cli]: <https://commitlint.js.org/reference/cli.html>
+[^cl-share]: <https://commitlint.js.org/concepts/shareable-config.html>
+[^cl-prompt]: <https://commitlint.js.org/guides/use-prompt.html>
 [^cl-cli-pkg]: [commitlint GitHub repository](https://github.com/conventional-changelog/commitlint)
     (GitHub API: `@commitlint/cli/package.json`, `"version": "21.2.4"`)
-[^cl-releases]: https://github.com/conventional-changelog/commitlint/releases
+[^cl-releases]: <https://github.com/conventional-changelog/commitlint/releases>
 [^cl-404]: [`/guides/monorepo.html`](https://commitlint.js.org/guides/monorepo.html) と
     [`/concepts/monorepo.html`](https://commitlint.js.org/concepts/monorepo.html)
     （いずれも 404 確認）
-[^gl-index]: https://jorisroovers.com/gitlint/latest/
-[^gl-config]: https://jorisroovers.com/gitlint/latest/configuration/
-[^gl-rules]: https://jorisroovers.com/gitlint/latest/rules/builtin_rules/
-[^gl-rules-src]: https://github.com/jorisroovers/gitlint/blob/main/gitlint-core/gitlint/rules.py
-[^gl-contrib]: https://jorisroovers.com/gitlint/latest/rules/contrib_rules/
-[^gl-userrules]: https://jorisroovers.com/gitlint/latest/rules/user_defined_rules/
-[^gl-hooks]: https://jorisroovers.com/gitlint/latest/commit_hooks/
-[^gl-ci]: https://jorisroovers.com/gitlint/latest/ci/
-[^gl-range]: https://jorisroovers.com/gitlint/latest/linting_specific_commits/
-[^gl-target]: https://jorisroovers.com/gitlint/latest/configuration/general_options/
-[^gl-pyproject]: https://github.com/jorisroovers/gitlint/blob/main/gitlint-core/pyproject.toml
-[^gl-tags]: https://github.com/jorisroovers/gitlint/tags
+[^gl-index]: <https://jorisroovers.com/gitlint/latest/>
+[^gl-config]: <https://jorisroovers.com/gitlint/latest/configuration/>
+[^gl-rules]: <https://jorisroovers.com/gitlint/latest/rules/builtin_rules/>
+[^gl-rules-src]: <https://github.com/jorisroovers/gitlint/blob/main/gitlint-core/gitlint/rules.py>
+[^gl-contrib]: <https://jorisroovers.com/gitlint/latest/rules/contrib_rules/>
+[^gl-userrules]: <https://jorisroovers.com/gitlint/latest/rules/user_defined_rules/>
+[^gl-hooks]: <https://jorisroovers.com/gitlint/latest/commit_hooks/>
+[^gl-ci]: <https://jorisroovers.com/gitlint/latest/ci/>
+[^gl-range]: <https://jorisroovers.com/gitlint/latest/linting_specific_commits/>
+[^gl-target]: <https://jorisroovers.com/gitlint/latest/configuration/general_options/>
+[^gl-pyproject]: <https://github.com/jorisroovers/gitlint/blob/main/gitlint-core/pyproject.toml>
+[^gl-tags]: <https://github.com/jorisroovers/gitlint/tags>

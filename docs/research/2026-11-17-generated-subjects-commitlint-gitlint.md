@@ -162,7 +162,7 @@ fixup=amend 0.18.0 からである。古い導入先に現在の挙動を適用�
 
 実際にどの Git 操作が `commit-msg` を呼ぶかは、ツールの matcher とは別問題である。Git はフックを
 スキップでき、すべての履歴生成経路が同じフックを通るとは限らない。特に sequencer の経路は
-[既存の Git 入力調査](2026-11-13-git-commit-message-input.md)を参照する。今回、全 Git バージョン・
+[既存の Git 入力調査](2026-11-13-git-commit-message-input.md)を参照する。今回、全 Git バージョン・ <!-- rumdl-disable-line MD089 -->
 操作のフック起動や、全パーサー・ルール設定での挙動は再実測していない[^git-hooks][^git-commit]。
 
 ## 出典
@@ -176,19 +176,14 @@ fixup=amend 0.18.0 からである。古い導入先に現在の挙動を適用�
 [^git-merge]: <https://git-scm.com/docs/git-fmt-merge-msg>
 [^git-hooks]: <https://git-scm.com/docs/githooks#_commit_msg>
 [^project-design]: [README: Design philosophy](../../README.md#design-philosophy)
-[^cl-
-defaults]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/src/defaults.ts>
-[^cl-
-ignored]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/src/is-ignored.ts>
+[^cl-defaults]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/src/defaults.ts>
+[^cl-ignored]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/src/is-ignored.ts>
 [^cl-lint]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/lint/src/lint.ts>
 [^cl-config]: <https://commitlint.js.org/reference/configuration.html>
 [^cl-cli]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/cli/src/cli.ts>
 [^cl-local]: <https://commitlint.js.org/guides/local-setup.html>
-[^cl-
-conventional]:
-  <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/config-conventional/src/index.ts>
-[^cl-
-changelog]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/CHANGELOG.md>
+[^cl-conventional]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/config-conventional/src/index.ts>
+[^cl-changelog]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/CHANGELOG.md>
 [^gl-git]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/gitlint-core/gitlint/git.py>
 [^gl-lint]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/gitlint-core/gitlint/lint.py>
 [^gl-config-src]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/gitlint-core/gitlint/config.py>
@@ -200,8 +195,5 @@ changelog]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%
 [^gl-builtin]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/docs/rules.md>
 [^gl-rules]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/gitlint-core/gitlint/rules.py>
 [^gl-contrib]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/docs/contrib_rules.md>
-[^gl-cc
-2]:
-  <https://github.com/jorisroovers/gitlint/blob/v0.19.1/gitlint-core/gitlint/contrib/rules/disallow_cleanup_commits.py>
-[^gl-
-history]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/docs/index.md#merge-fixup-squash-and-revert-commits>
+[^gl-cc2]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/gitlint-core/gitlint/contrib/rules/disallow_cleanup_commits.py>
+[^gl-history]: <https://github.com/jorisroovers/gitlint/blob/v0.19.1/docs/index.md#merge-fixup-squash-and-revert-commits>

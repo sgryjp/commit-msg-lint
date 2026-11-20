@@ -14,8 +14,8 @@ repos:
         language: system
         stages: [commit-msg]
         always_run: true
-  - repo: https://github.com/sgryjp/cjkfmt
-    rev: 0.0.10
+  - repo: https://github.com/rvben/rumdl-pre-commit
+    rev: v0.3.5
     hooks:
-      - id: cjkfmt-check
+      - id: rumdl-check
         stages: [pre-commit]

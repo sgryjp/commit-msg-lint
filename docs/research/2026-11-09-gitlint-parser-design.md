@@ -12,7 +12,7 @@
 Git のフック入力を調べた後続調査により、この報告の Git 互換性に
 関する説明・推奨を次のとおり訂正する。gitlint 自身のパーサー挙動の
 記述は訂正対象ではない。詳細は
-[後続調査](2026-11-13-git-commit-message-input.md)の 3〜4、8.1、9 章を参照。
+[後続調査](2026-11-13-git-commit-message-input.md)の 3〜4、8.1、9 章を参照。 <!-- rumdl-disable-line MD089 -->
 
 - 3.3 節の「フックはクリーンアップ前のファイルを受け取る」は正しいが、
   そこから「コメント行は Git のテンプレートコメントなので除去してよい」
@@ -49,7 +49,7 @@ Git のフック入力を調べた後続調査により、この報告の Git �
 
 ## 2. パッケージ構成と呼び出し経路
 
-```
+```text
 gitlint CLI (cli.py, click)
   ├ build_git_context()        入力源の優先順:
   │    │                       --msg-filename > stdin > ローカルリポジトリ (git log)
@@ -317,5 +317,6 @@ EAW 幅計測は両者に対する明確な差別化点になる。比較のた�
 - `CHANGELOG.md`
 
 リポジトリ:
+
 - [jorisroovers/gitlint](https://github.com/jorisroovers/gitlint)
 - 比較対象: `research/commitlint-parser-design.md`

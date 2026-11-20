@@ -7,14 +7,7 @@ This repository validates a Rust CLI and Markdown documents. For agent-specific 
 
 - Stable Rust toolchain, including `cargo`
 - Python 3
-- cjkfmt 0.0.10
 - pre-commit 4.4.0 or later, or a compatible current version of prek
-
-Install cjkfmt with:
-
-```sh
-cargo install --locked cjkfmt --version 0.0.10
-```
 
 Install either pre-commit or prek as your hook runner. Use the installation method appropriate for
 your environment, and make sure you have the latest release.
@@ -117,9 +110,11 @@ configuration, or Rules, update the relevant documents and examples alongside th
 When updating the `unicode-width` crate or Unicode data, update the documented versions and
 conformance tests, and describe the change in the release notes.
 
-Tracked `.md` and `.markdown` files must be no more than 100 columns wide and must include a
-half-width space between Japanese text and adjacent ASCII letters or digits. Check for violations by
-running all files through your hook runner:
+Tracked Markdown files are checked with rumdl using `.rumdl.toml`. The line-length rule uses a
+limit of 120 display columns, with exceptions for some long lines. The CJK spacing rule checks for
+spaces between CJK text and adjacent ASCII letters or digits. It also checks the outside of links
+and inline code, even when their text is Japanese; use `<!-- rumdl-disable-line MD089 -->` for such
+cases rather than adding unnecessary spaces. Run all checks through your hook runner:
 
 ```sh
 pre-commit run --all-files
@@ -128,14 +123,16 @@ prek run --all-files
 ```
 
 The Markdown hook does not modify files; the configuration schema hook may update its generated
-file as described above. When editing Markdown, format the target files explicitly and review the
-diff before running the checks. If automatic formatting leaves diagnostics, fix them by hand while
-preserving the Markdown structure and meaning.
+file as described above. To check or fix specific Markdown files directly, install rumdl separately:
 
 ```sh
-cjkfmt format --write README.md docs/example.md
-cjkfmt check README.md docs/example.md
+cargo install --locked rumdl --version 0.3.5
+rumdl check README.md docs/cli.md
+rumdl check --fix README.md docs/cli.md
 ```
+
+The hook installs its own copy, so a separate installation is optional. Review the diff after fixing
+and address any remaining diagnostics by hand, preserving the Markdown structure and meaning.
 
 ## Git hooks
 
@@ -180,8 +177,7 @@ The workflow runs on tag pushes and does not publish packages or attach build ar
 before the workflow is available do not trigger it retroactively. The Web demo and configuration
 schema on GitHub Pages track `main`, not the release tag.
 
-## Updating cjkfmt
+## Updating rumdl
 
-When updating cjkfmt, update the hook release, the version of the binary installed in CI, and the
-version listed in this document in the same change. Run the checks on all Markdown files both before
-and after the update.
+When updating rumdl, update the hook release and the version in this document together. Run the
+checks on all Markdown files before and after the update.

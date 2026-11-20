@@ -12,7 +12,7 @@
 Git のフック入力を調べた後続調査により、この報告の Git 互換性に
 関する推奨を次のとおり補足・訂正する。commitlint 自身のパーサー挙動の
 記述は訂正対象ではない。詳細は
-[後続調査](2026-11-13-git-commit-message-input.md)の 3〜4、8.2、9〜10 章を参照。
+[後続調査](2026-11-13-git-commit-message-input.md)の 3〜4、8.2、9〜10 章を参照。 <!-- rumdl-disable-line MD089 -->
 
 - 7 章の「Git 互換性のために前処理を合わせるべき」という推奨は、
   入力経路と目的を限定する必要がある。`commit-msg` フックが受け取るのは
@@ -49,7 +49,7 @@ Git のフック入力を調べた後続調査により、この報告の Git �
 
 ## 2. パッケージ構成と呼び出し経路
 
-```
+```text
 commitlint CLI
   └ @commitlint/load      設定と parserPreset を解決し parserOpts を作る
   └ @commitlint/lint      lint(message, rules, { parserOpts, parser, ... })
@@ -129,7 +129,7 @@ type Commit = CommitBase & Record<string, string | null>  // type/scope/subject 
 
 ### 3.4 状態遷移
 
-```
+```text
 parseMerge()          mergePattern にマッチすれば merge 行として 1 行消費
 parseHeader()         次の 1 行を header とし、breakingHeaderPattern → headerPattern の順に照合
 references ← header   ヘッダー中の issue 参照を抽出
@@ -304,6 +304,7 @@ commitlint のパーサーから引き継ぐべき点と変えるべき点を整
 - `conventional-changelog/packages/conventional-changelog-angular/src/parser.js`
 
 リポジトリ:
+
 - [conventional-changelog/commitlint](https://github.com/conventional-changelog/commitlint)
 - [conventional-changelog/conventional-
   changelog](https://github.com/conventional-changelog/conventional-changelog)
