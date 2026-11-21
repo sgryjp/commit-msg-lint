@@ -24,7 +24,7 @@ feature. Group them by area; prioritize individual items when they are triaged.
 - [ ] Decide what platform guarantees to offer, including Windows hook behavior.
 - [ ] Decide whether the Rust library API is a supported, stable embedding interface.
 - [ ] Evaluate support for custom Rules or plugins.
-- [ ] Evaluate direct linting of Git history and commit ranges.
+- [ ] Implement Git commit range linting as described in the [history input guide](docs/cli.md#history-input).
 - [ ] Evaluate hook installation and management.
 
 ## Agent workflows

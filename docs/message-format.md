@@ -19,12 +19,14 @@ Refs #123
 
 ## Input and lines
 
-The CLI reads UTF-8 from standard input or the file specified by `--edit`. Invalid UTF-8 is an
-input error. By default, the CLI first truncates at the first matching scissors line, then excludes
-comment lines. Each operation can be independently disabled. The exact matching conditions,
-environment controls, Git prefix resolution, and limitations are in the
-[CLI reference](cli.md#message-filtering). The public `lint(input, config)` library API and Web demo
-inspect the supplied input without filtering. No input file is rewritten.
+The CLI reads UTF-8 from standard input or the file specified by `--edit`. History input reads
+stored commit message bytes and requires them to be valid UTF-8; it does not convert them using Git's
+commit-encoding settings. Invalid UTF-8 is an input error. By default, standard input and `--edit`
+first truncate at the first matching scissors line, then exclude comment lines. Each operation can
+be independently disabled. History input and the public `lint(input, config)` library API and Web
+demo inspect the supplied message without filtering. The exact matching conditions, environment
+controls, Git prefix resolution, and limitations for standard input and `--edit` are in the
+[CLI reference](cli.md#message-filtering). No input file is rewritten.
 
 For linting, every CRLF pair in the remaining input is converted to LF, and at most one final LF is
 removed. A standalone CR is not normalized and is checked as a forbidden control character. Apart
