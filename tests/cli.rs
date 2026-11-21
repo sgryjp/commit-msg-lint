@@ -51,6 +51,62 @@ impl TestDir {
         assert!(output.status.success(), "git {args:?}: {}", stderr(&output));
     }
 
+    fn git_with_input(&self, args: &[&str], input: &[u8]) -> Output {
+        let mut child = self
+            .isolated_command("git")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(input).unwrap();
+        child.wait_with_output().unwrap()
+    }
+
+    fn git_stdout(&self, args: &[&str]) -> String {
+        let output = self.isolated_command("git").args(args).output().unwrap();
+        assert!(output.status.success(), "git {args:?}: {}", stderr(&output));
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    fn init_repository(&self) {
+        self.git(&["init", "--quiet"]);
+        self.git(&["config", "user.name", "Test User"]);
+        self.git(&["config", "user.email", "test@example.com"]);
+    }
+
+    fn create_raw_commit(&self, message: &[u8], encoding: Option<&str>) -> String {
+        let tree = self.git_with_input(&["mktree"], b"");
+        assert!(tree.status.success(), "git mktree: {}", stderr(&tree));
+        let tree = String::from_utf8(tree.stdout).unwrap().trim().to_owned();
+        let encoding = encoding.map_or_else(String::new, |value| format!("encoding {value}\n"));
+        let mut object = format!(
+            "tree {tree}\nauthor Test User <test@example.com> 0 +0000\ncommitter Test User <test@example.com> 0 +0000\n{encoding}\n"
+        )
+        .into_bytes();
+        object.extend_from_slice(message);
+        let created = self.git_with_input(
+            &[
+                "hash-object",
+                "-w",
+                "--literally",
+                "-t",
+                "commit",
+                "--stdin",
+            ],
+            &object,
+        );
+        assert!(
+            created.status.success(),
+            "git hash-object: {}",
+            stderr(&created)
+        );
+        let oid = String::from_utf8(created.stdout).unwrap().trim().to_owned();
+        self.git(&["update-ref", "HEAD", &oid]);
+        oid
+    }
+
     fn command(&self, args: &[&str], input: &[u8]) -> Output {
         self.command_with_env(args, input, &[])
     }
@@ -82,12 +138,249 @@ fn stderr(output: &Output) -> &str {
 }
 
 #[test]
+fn a_single_revision_lints_only_the_selected_commit_and_labels_its_full_id() {
+    let dir = TestDir::new();
+    dir.git(&["init", "--quiet"]);
+    dir.git(&["config", "user.name", "Test User"]);
+    dir.git(&["config", "user.email", "test@example.com"]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "not conventional",
+    ]);
+    let selected = dir
+        .isolated_command("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(selected.status.success());
+    let selected = String::from_utf8(selected.stdout)
+        .unwrap()
+        .trim()
+        .to_owned();
+
+    let output = dir.command(&["--commits", "HEAD"], b"ignored standard input");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "{selected}:1: error[header-format] header does not match the Conventional Commit format\n"
+        )
+    );
+}
+
+#[test]
+fn a_single_commit_can_be_selected_by_tag_or_full_object_id() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "not conventional",
+    ]);
+    let oid = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["tag", "selected-commit"]);
+    dir.git(&["branch", "selected-branch"]);
+
+    for revision in ["refs/tags/selected-commit", "selected-branch", &oid] {
+        let output = dir.command(&["--commits", revision], b"");
+        assert_eq!(output.status.code(), Some(1), "{revision}");
+        assert_eq!(
+            stderr(&output),
+            format!(
+                "{oid}:1: error[header-format] header does not match the Conventional Commit format\n"
+            ),
+            "{revision}"
+        );
+    }
+}
+
+#[test]
+fn invalid_revisions_non_commit_objects_and_git_failures_are_operational_errors() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
+    for revision in ["missing-revision", "HEAD~999999"] {
+        let output = dir.command(&["--commits", revision], b"");
+        assert_eq!(output.status.code(), Some(2), "{revision}");
+        assert!(stderr(&output).contains("cannot resolve commit revision"));
+    }
+
+    let blob = dir.git_with_input(&["hash-object", "-w", "--stdin"], b"not a commit");
+    assert!(blob.status.success());
+    let blob = String::from_utf8(blob.stdout).unwrap().trim().to_owned();
+    let output = dir.command(&["--commits", &blob], b"");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("cannot resolve commit revision"));
+
+    fs::write(dir.0.join("config.jsonc"), r#"{ "version": 1 }"#).unwrap();
+    let output = dir.command_with_env(
+        &["--config", "config.jsonc", "--commits", "HEAD"],
+        b"",
+        &[("PATH", "")],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("cannot run Git"));
+
+    let outside = TestDir::new();
+    let output = outside.command(&["--commits", "HEAD"], b"");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("cannot resolve commit revision"));
+}
+
+#[test]
+fn history_lint_checks_saved_comments_and_scissors_without_filter_environment() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["config", "core.commentChar", "auto"]);
+    let mut message = b"feat: stored\n\n# comment-like content \n# ------------------------ >8 ------------------------\n".to_vec();
+    message.extend(std::iter::repeat_n(b'x', 73));
+    message.push(b'\n');
+    let oid = dir.create_raw_commit(&message, None);
+
+    let default_policy = dir.command(&["--commits", "HEAD"], b"ignored standard input");
+    assert_eq!(default_policy.status.code(), Some(1));
+    assert!(stderr(&default_policy).contains(":5: error[body-max-width]"));
+
+    let output = dir.command_with_env(
+        &["--commits", "HEAD"],
+        b"standard input is not the commit message",
+        &[(STRIP, "invalid"), (CUT, "")],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let diagnostics = stderr(&output);
+    assert!(diagnostics.contains(":3: error[line-trailing-whitespace]"));
+    assert!(diagnostics.contains(":5: error[body-max-width]"));
+    assert!(
+        diagnostics
+            .lines()
+            .all(|line| line.starts_with(&format!("{oid}:")))
+    );
+}
+
+#[test]
+fn stored_commit_messages_require_utf8_without_encoding_conversion_and_preserve_nul() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["config", "i18n.commitEncoding", "ISO-8859-1"]);
+    dir.git(&["config", "i18n.logOutputEncoding", "ISO-8859-1"]);
+
+    let invalid = dir.create_raw_commit(b"feat: invalid \xff\n", Some("ISO-8859-1"));
+    let output = dir.command(&["--commits", "HEAD"], b"");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains(&format!("commit {invalid} message is not valid UTF-8")));
+    assert!(!stderr(&output).contains("error["));
+
+    let valid = dir.create_raw_commit("feat: café\n".as_bytes(), Some("ISO-8859-1"));
+    let output = dir.command(&["--commits", &valid], b"");
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+
+    let nul = dir.create_raw_commit(b"feat: nul\0in-message\n", None);
+    let output = dir.command(&["--commits", &nul], b"");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        format!("{nul}:1: error[control-character] line contains a forbidden control character\n")
+    );
+}
+
+#[test]
+fn history_uses_configured_warning_severity_strict_mode_and_ignored_messages() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let warning_config = r#"{ "version": 1, "rules": {
+        "header-format": { "severity": "warning" },
+        "header-trim": { "severity": "warning" }
+    } }"#;
+    fs::write(dir.0.join("rules.jsonc"), warning_config).unwrap();
+    fs::write(dir.0.join("commit-msg-lint.jsonc"), warning_config).unwrap();
+    let oid = dir.create_raw_commit(b"not conventional \n", None);
+
+    for (strict, code) in [(false, 0), (true, 1)] {
+        let mut args = vec!["--commits", &oid];
+        if strict {
+            args.push("--strict");
+        }
+        let output = dir.command(&args, b"");
+        assert_eq!(output.status.code(), Some(code), "strict={strict}");
+        assert_eq!(
+            stderr(&output),
+            format!(
+                "{oid}:1: warning[header-format] header does not match the Conventional Commit format\n{oid}:1: warning[header-trim] header has leading or trailing whitespace\n"
+            )
+        );
+    }
+
+    let ignored = dir.create_raw_commit(b"fixup! invalid\nbad \x01\n", None);
+    let output = dir.command(
+        &["--config", "rules.jsonc", "--strict", "--commits", &ignored],
+        b"",
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+}
+
+#[test]
+fn history_uses_display_columns_for_existing_width_rules() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let header = format!("feat: {}\n", "界".repeat(34));
+    let oid = dir.create_raw_commit(header.as_bytes(), None);
+
+    let output = dir.command(&["--commits", &oid], b"");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        format!("{oid}:1: error[header-max-width] display width 74 exceeds 72\n")
+    );
+}
+
+#[test]
+fn commits_conflict_with_edit_without_changing_file_input() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
+    fs::write(dir.0.join("message"), "feat: file input\n").unwrap();
+
+    let output = dir.command(&["--commits", "HEAD", "--edit", "message"], b"");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("cannot be used with"));
+}
+
+#[test]
+fn revisions_are_not_interpreted_as_git_options_or_shell_commands() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
+
+    let option = dir.command(&["--commits=--upload-pack=unexpected"], b"");
+    assert_eq!(option.status.code(), Some(2));
+    assert!(stderr(&option).contains("must not begin with '-'"));
+
+    let command = dir.command(&["--commits", "$(touch shell-injection-marker)"], b"");
+    assert_eq!(command.status.code(), Some(2));
+    assert!(!dir.0.join("shell-injection-marker").exists());
+}
+
+#[test]
 fn help_explains_how_each_option_affects_linting() {
     let dir = TestDir::new();
     let output = dir.command(&["--help"], b"");
     assert_eq!(output.status.code(), Some(0));
     let help = std::str::from_utf8(&output.stdout).unwrap();
     assert!(help.contains("Read the message from a file instead of standard input."));
+    assert!(help.contains("Lint the message stored in one Git commit."));
     assert!(help.contains("Use the specified configuration file instead of discovering one."));
     assert!(
         help.contains(
@@ -167,10 +460,44 @@ fn print_default_config_does_not_wait_for_standard_input_eof() {
 }
 
 #[test]
+fn commits_mode_does_not_wait_for_standard_input_eof() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: stored"]);
+    let mut child = dir
+        .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
+        .args(["--commits", "HEAD"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            drop(stdin);
+            let _ = child.wait();
+            panic!("--commits waited for standard input EOF");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn print_default_config_cannot_be_combined_with_other_arguments() {
     let dir = TestDir::new();
     for args in [
         &["--print-default-config", "--strict"][..],
+        &["--print-default-config", "--commits", "HEAD"],
         &["--strict", "--print-default-config"],
         &["--print-default-config", "--edit", "message"],
         &["--print-default-config", "--config", "config.jsonc"],
@@ -226,6 +553,7 @@ fn print_config_schema_cannot_be_combined_with_other_arguments() {
     let dir = TestDir::new();
     for args in [
         &["--print-config-schema", "--strict"][..],
+        &["--print-config-schema", "--commits", "HEAD"],
         &["--strict", "--print-config-schema"],
         &["--print-config-schema", "--edit", "message"],
         &["--print-config-schema", "--config", "config.jsonc"],
@@ -284,6 +612,7 @@ fn agent_help_cannot_be_combined_with_other_arguments() {
     let dir = TestDir::new();
     for args in [
         &["--help-for-agents", "--strict"][..],
+        &["--help-for-agents", "--commits", "HEAD"],
         &["--strict", "--help-for-agents"],
         &["--help-for-agents", "--edit", "message"],
         &["--help-for-agents", "--config", "config.jsonc"],

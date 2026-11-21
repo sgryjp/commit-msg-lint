@@ -4,14 +4,16 @@
 commit-msg-lint [OPTIONS]
 ```
 
-The CLI checks one commit message against its configured Rules, or prints information with a
-standalone option. It does not modify the message or install Git hooks.
+The CLI checks one commit message from standard input, a file, or a Git commit against its
+configured Rules, or prints information with a standalone option. It does not modify the message or
+install Git hooks.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `--edit <path>` | Read the message from a file instead of standard input. |
+| `--commits <revision>` | Lint the message stored in exactly one Git commit. Conflicts with `--edit`. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
 | `--print-default-config` | Print built-in defaults as editable JSON to stdout and exit. |
@@ -45,6 +47,13 @@ commit-msg-lint --edit .git/COMMIT_EDITMSG
 commit-msg-lint --config config/lint.jsonc --strict --edit message.txt
 ```
 
+Lint only the commit named by a Git revision; its ancestors are not included:
+
+```sh
+commit-msg-lint --commits HEAD
+commit-msg-lint --config config/lint.jsonc --strict --commits v1.2.3
+```
+
 For an existing Git `commit-msg` hook, pass the hook's first argument:
 
 ```sh
@@ -58,12 +67,22 @@ its message before final cleanup. The same hook command works with the CLI's def
 
 ## Input
 
-For linting, without `--edit`, the CLI reads standard input until EOF.
-With `--edit`, it reads the entire file and ignores standard input.
-Input must be valid UTF-8; other encodings are not supported.
-The CLI does not convert messages based on Git's `i18n.commitEncoding` setting.
-After filtering, CRLF is normalized to LF for linting, and one final newline is excluded from the message content.
-Filtering runs before normalization: in particular, a scissors line ending in CRLF does not match, as described below.
+For linting, without `--edit` or `--commits`, the CLI reads standard input until EOF.
+With `--edit`, it reads the entire file and ignores standard input. With `--commits <revision>`,
+the CLI resolves the revision to exactly one commit and reads that commit's stored message; it does
+not walk the commit's ancestors. Branches, tags, and full object IDs are accepted when they resolve
+to commits. Invalid, unavailable, and non-commit revisions are operational errors. A revision
+starting with `-` is rejected to prevent option injection. `--commits` conflicts with `--edit` and
+does not read standard input.
+
+Input must be valid UTF-8; other encodings are not supported. The CLI does not convert stdin or
+file messages based on Git's `i18n.commitEncoding` setting. History messages are read as stored
+bytes and decoded strictly as UTF-8, regardless of a commit's encoding header or Git configuration.
+Invalid UTF-8 is an operational error identifying the commit. Valid UTF-8, including embedded NUL,
+is passed to the existing Lint Rules without display-time encoding conversion. CRLF is normalized
+to LF for linting, and one final newline is excluded from the message content. Filtering runs before
+normalization for stdin and file input: in particular, a scissors line ending in CRLF does not
+match, as described below.
 With the built-in defaults, an empty message fails the `header-format` Rule.
 By default, recognized Git-generated and hosting-service Header forms silently bypass all Rules.
 See [ignored messages](configuration.md#ignored-messages) for matching boundaries, configuration,
@@ -74,8 +93,10 @@ inspect the resulting message separately if it must be checked.
 ## Message filtering
 
 For both standard input and `--edit`, the CLI excludes comment lines and truncates at scissors by
-default. It does not rewrite the input file. The public `lint(input, config)` library API and Web
-demo check the original input without this filtering. See the
+default. These operations apply only to stdin and file input. History input checks the stored message
+as-is: it does not remove comment-like lines or truncate at scissors, and it does not read or validate
+the filtering environment variables or resolve a Git comment prefix. The public
+`lint(input, config)` library API and Web demo also check the original input without this filtering. See the
 [design](design/commit-message-parsing-and-linting.md) and
 [decision record](adr/0002-default-message-filtering.md) for the rationale and full constraints.
 
@@ -154,7 +175,8 @@ Lint diagnostics are written to standard error in this format:
 <source>:<line>: <severity>[<rule-id>] <message>
 ```
 
-`<source>` is `<stdin>` or the path passed to `--edit`, with non-UTF-8 path characters replaced.
+`<source>` is `<stdin>`, the path passed to `--edit`, or the full commit object ID for `--commits`.
+File paths are displayed with non-UTF-8 characters replaced.
 Line numbers start at 1 and refer to the original input, even when lines are filtered out.
 Diagnostics are sorted by line number and then Rule ID. For example,
 `printf 'feat:subject\n' | commit-msg-lint` with the built-in defaults produces:
