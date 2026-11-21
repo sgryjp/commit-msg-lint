@@ -1305,7 +1305,7 @@ fn agent_usage_documents_completed_message_and_existing_hook_examples() {
             .contains("unless the hook explicitly removes or replaces them")
     );
     assert!(docs.contains("warnings can still be printed to\nstandard error with exit code `0`"));
-    assert!(docs.contains("A shallow-range warning alone does not fail the command."));
+    assert!(docs.contains("History input also returns `2` in a shallow repository."));
 }
 
 #[test]

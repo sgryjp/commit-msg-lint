@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Lint a stored Git commit or explicit commit range with `--commits`, including a warning when a
-  shallow repository may leave range coverage incomplete.
+- Lint a Git commit or explicit commit range with `--commits`. Messages use Git's UTF-8 display
+  conversion, and shallow repositories are rejected to avoid potentially incomplete history.
 
 ## [0.0.2] - 2026-11-18
 

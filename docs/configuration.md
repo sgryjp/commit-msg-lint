@@ -152,7 +152,7 @@ validated. A match silently excludes the entire message, including Body, Footer,
 characters: no warnings or errors are produced, even with `--strict`. This trades universal width
 and severity enforcement for usable generated-message workflows. Nonmatching messages retain all
 configured Rules and severities. The CLI applies this policy after its usual filtering for standard
-input and `--edit`; history input applies it to the stored message without editor filtering. The
+input and `--edit`; history input applies it to Git's message output without editor filtering. The
 library and Web demo apply it to their unfiltered input.
 
 ## Conventional Commit settings
