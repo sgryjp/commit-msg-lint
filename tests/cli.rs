@@ -23,6 +23,11 @@ impl TestDir {
 
     fn isolated_command(&self, program: &str) -> Command {
         let mut command = Command::new(program);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
         command
             .env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
@@ -150,9 +155,7 @@ fn stderr(output: &Output) -> &str {
 #[test]
 fn a_single_revision_lints_only_the_selected_commit_and_labels_its_full_id() {
     let dir = TestDir::new();
-    dir.git(&["init", "--quiet"]);
-    dir.git(&["config", "user.name", "Test User"]);
-    dir.git(&["config", "user.email", "test@example.com"]);
+    dir.init_repository();
     dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
     dir.git(&[
         "commit",
@@ -181,6 +184,77 @@ fn a_single_revision_lints_only_the_selected_commit_and_labels_its_full_id() {
         format!(
             "{selected}:1: error[header-format] header does not match the Conventional Commit format\n"
         )
+    );
+}
+
+#[test]
+fn message_search_revisions_resolve_commits_and_keep_double_dots_in_search_text() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let oid = dir.create_raw_commit(b"not conventional needle..match\n", None);
+
+    for revision in [":/needle", ":/needle..match"] {
+        let output = dir.command(&["--commits", revision], b"");
+
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{revision}: {}",
+            stderr(&output)
+        );
+        assert_eq!(
+            stderr(&output),
+            format!(
+                "{oid}:1: error[header-format] header does not match the Conventional Commit format\n"
+            ),
+            "{revision}"
+        );
+    }
+}
+
+#[test]
+fn history_lint_does_not_lazy_fetch_missing_objects_from_a_promisor_remote() {
+    let source = TestDir::new();
+    source.init_repository();
+    source.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: stored"]);
+    let oid = source.git_stdout(&["rev-parse", "HEAD"]);
+
+    let promisor = TestDir::new();
+    promisor.git(&[
+        "clone",
+        "--quiet",
+        "--local",
+        source.0.to_str().unwrap(),
+        ".",
+    ]);
+    promisor.git(&["config", "extensions.partialClone", "origin"]);
+    promisor.git(&["config", "remote.origin.promisor", "true"]);
+    promisor.git(&[
+        "config",
+        "remote.origin.url",
+        promisor.0.join("unavailable-remote").to_str().unwrap(),
+    ]);
+    let object = promisor
+        .0
+        .join(".git/objects")
+        .join(&oid[..2])
+        .join(&oid[2..]);
+    fs::remove_file(object).unwrap();
+
+    let output = promisor.command_with_env(&["--commits", "HEAD"], b"", &[("GIT_TRACE", "1")]);
+
+    assert_eq!(output.status.code(), Some(2));
+    let diagnostics = stderr(&output);
+    assert!(
+        diagnostics.contains("cannot resolve commit revision"),
+        "{diagnostics}"
+    );
+    let attempted_fetch = diagnostics
+        .lines()
+        .any(|line| line.contains("run_command: git ") && line.contains(" fetch origin "));
+    assert!(
+        !attempted_fetch,
+        "Git attempted a promisor fetch:\n{diagnostics}"
     );
 }
 
@@ -675,8 +749,9 @@ fn a_later_invalid_message_preserves_prior_diagnostics_and_stops_the_range() {
     let base = dir.git_stdout(&["rev-parse", "HEAD"]);
     let first = dir.create_raw_commit_with_parent(b"not conventional\n", None, Some(&base));
     let invalid = dir.create_raw_commit_with_parent(b"feat: invalid \xff\n", None, Some(&first));
+    let oversized_ignored = format!("fixup! feat: base\n{}", "still ignored\n".repeat(100_000));
     let later =
-        dir.create_raw_commit_with_parent(b"another invalid message\n", None, Some(&invalid));
+        dir.create_raw_commit_with_parent(oversized_ignored.as_bytes(), None, Some(&invalid));
 
     let output = dir.command(&["--commits", &format!("{base}..{later}")], b"");
 
@@ -790,11 +865,7 @@ fn help_explains_how_each_option_affects_linting() {
         help.contains("Lint messages stored in one commit or selected by an explicit Git range.")
     );
     assert!(help.contains("Use the specified configuration file instead of discovering one."));
-    assert!(
-        help.contains(
-            "Treat warnings as failures for the exit code without changing their severity."
-        )
-    );
+    assert!(help.contains("Treat Lint Rule warnings as failures without changing their severity."));
     assert!(help.contains("--help-for-agents"));
     assert!(help.contains("Print agent-oriented usage guidance and exit."));
     assert!(help.contains("--print-default-config"));
@@ -1051,6 +1122,7 @@ fn agent_usage_documents_completed_message_and_existing_hook_examples() {
             .contains("unless the hook explicitly removes or replaces them")
     );
     assert!(docs.contains("warnings can still be printed to\nstandard error with exit code `0`"));
+    assert!(docs.contains("A shallow-range warning alone does not fail the command."));
 }
 
 #[test]

@@ -15,7 +15,7 @@ modify messages or install Git hooks.
 | `--edit <path>` | Read the message from a file instead of standard input. |
 | `--commits <revision-or-range>` | Lint one commit or commits selected by an explicit Git range. Conflicts with `--edit`. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
-| `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
+| `--strict` | Treat Lint Rule warnings as failures; shallow-range warnings remain informational. |
 | `--print-default-config` | Print built-in defaults as editable JSON to stdout and exit. |
 | `--print-config-schema` | Print the configuration JSON Schema to stdout and exit. |
 | `--help-for-agents` | Print [agent guidance](agent-usage.md) to stdout and exit successfully. |

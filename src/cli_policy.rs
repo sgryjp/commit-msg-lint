@@ -52,17 +52,15 @@ fn read_boolean(name: &str) -> Result<bool, String> {
 }
 
 pub fn git_command() -> Command {
+    let mut command = Command::new("git");
+    // Preserve history mode's no-automatic-fetch contract in partial clones.
+    command.env("GIT_NO_LAZY_FETCH", "1");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let mut command = Command::new("git");
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        command
     }
-    #[cfg(not(windows))]
-    {
-        Command::new("git")
-    }
+    command
 }
 
 fn run_git(args: &[&str]) -> Result<Output, String> {

@@ -24,10 +24,10 @@ commit-msg-lint --edit message.txt
 
 The CLI does not modify the message. Diagnostics go to standard error and include the source and
 original line number. Exit code `0` means there are no lint errors; warnings can still be printed to
-standard error with exit code `0`. Exit code `1` means a lint error was found, or a warning was
-promoted to failure by `--strict`. Exit code `2` means an argument, configuration, Git, file-read,
-or input-decoding error occurred. `--strict` is opt-in; the linter does not infer that warnings
-should fail based on the caller.
+standard error with exit code `0`. Exit code `1` means a lint error was found, or a Lint Rule warning
+was promoted to failure by `--strict`. A shallow-range warning alone does not fail the command.
+Exit code `2` means an argument, configuration, Git, file-read, or input-decoding error occurred.
+`--strict` is opt-in; the linter does not infer that warnings should fail based on the caller.
 
 ## Check a completed message as supplied
 
