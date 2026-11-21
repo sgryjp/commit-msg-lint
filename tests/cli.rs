@@ -258,6 +258,105 @@ fn history_lint_does_not_lazy_fetch_missing_objects_from_a_promisor_remote() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn history_lint_blocks_promisor_fetch_when_git_ignores_no_lazy_fetch() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let source = TestDir::new();
+    source.init_repository();
+    source.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: stored"]);
+    let oid = source.git_stdout(&["rev-parse", "HEAD"]);
+
+    let partial = TestDir::new();
+    partial.git(&[
+        "clone",
+        "--quiet",
+        "--local",
+        source.0.to_str().unwrap(),
+        ".",
+    ]);
+    partial.git(&["config", "extensions.partialClone", "origin"]);
+    partial.git(&["config", "remote.origin.promisor", "true"]);
+    partial.git(&["config", "protocol.file.allow", "always"]);
+    let object = partial
+        .0
+        .join(".git/objects")
+        .join(&oid[..2])
+        .join(&oid[2..]);
+    fs::remove_file(&object).unwrap();
+
+    let real_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|path| path.is_file())
+        .expect("Git executable on PATH");
+    let legacy_bin = partial.0.join("legacy-bin");
+    fs::create_dir(&legacy_bin).unwrap();
+    let wrapper = legacy_bin.join("git");
+    fs::write(
+        &wrapper,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'git version 2.44.0\\n'; exit 0; fi\nunset GIT_NO_LAZY_FETCH\nexec \"$COMMIT_MSG_LINT_REAL_GIT\" \"$@\"\n",
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&wrapper).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&wrapper, permissions).unwrap();
+
+    let path = format!(
+        "{}:{}",
+        legacy_bin.display(),
+        std::env::var("PATH").unwrap()
+    );
+    let real_git = real_git.to_str().unwrap();
+    let output = partial.command_with_env(
+        &["--commits", "HEAD"],
+        b"",
+        &[
+            ("PATH", path.as_str()),
+            ("COMMIT_MSG_LINT_REAL_GIT", real_git),
+            ("GIT_TRACE", "1"),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("transport 'file' not allowed"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!object.exists(), "Git fetched the missing commit object");
+}
+
+#[test]
+fn native_git_range_accepts_double_dots_inside_a_message_search_endpoint() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: base"]);
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "invalid needle..match",
+    ]);
+    let selected = dir.git_stdout(&["rev-parse", "HEAD"]);
+    let range = "HEAD~1..:/needle..match";
+    assert_eq!(
+        dir.git_stdout(&["rev-list", "--topo-order", "--reverse", range]),
+        selected
+    );
+
+    let output = dir.command(&["--commits", range], b"");
+
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "{selected}:1: error[header-format] header does not match the Conventional Commit format\n"
+        )
+    );
+}
+
 #[test]
 fn a_two_dot_range_checks_only_commits_reachable_from_the_right_endpoint() {
     let dir = TestDir::new();
@@ -991,6 +1090,43 @@ fn print_default_config_cannot_be_combined_with_other_arguments() {
         assert!(output.stdout.is_empty(), "{args:?}");
         assert!(stderr(&output).contains("--print-default-config cannot be combined"));
     }
+}
+
+#[test]
+fn a_closed_diagnostic_pipe_terminates_git_even_when_the_next_commit_is_large() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let base = dir.create_raw_commit(b"feat: base\n", None);
+    let invalid = dir.create_raw_commit_with_parent(b"invalid message\n", None, Some(&base));
+    let large_ignored_message =
+        format!("fixup! feat: base\n{}", "still ignored\n".repeat(1_000_000));
+    let large =
+        dir.create_raw_commit_with_parent(large_ignored_message.as_bytes(), None, Some(&invalid));
+    let range = format!("{base}..{large}");
+    let mut child = dir
+        .isolated_command(env!("CARGO_BIN_EXE_commit-msg-lint"))
+        .args(["--commits", &range])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stderr.take());
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            let _ = child.wait();
+            panic!("--commits hung after its diagnostic stderr pipe was closed");
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    assert_eq!(status.code(), Some(2));
 }
 
 #[test]

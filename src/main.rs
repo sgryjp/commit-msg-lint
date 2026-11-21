@@ -156,7 +156,7 @@ fn parse_commit_selection(revision: &str) -> Result<CommitSelection<'_>, String>
     } else {
         (rest, false)
     };
-    if left.is_empty() || right.is_empty() || right.starts_with('.') || right.contains("..") {
+    if left.is_empty() || right.is_empty() || right.starts_with('.') {
         return Err(
             "commit range must have two explicit endpoints separated by '..' or '...'".to_owned(),
         );
@@ -278,6 +278,15 @@ fn read_batch_message<'a>(object: &'a [u8], oid: &str) -> Result<&'a [u8], Strin
     Ok(&object[separator + 2..])
 }
 
+struct ChildGuard(std::process::Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result<u8, String> {
     let commits = selected_commits(revision)?;
     if commits.is_empty() {
@@ -297,6 +306,7 @@ fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result
     let stderr = child.stderr.take().expect("piped Git stderr");
 
     std::thread::scope(|scope| {
+        let mut child = ChildGuard(child);
         let commit_ids = &commits;
         let writer = scope.spawn(move || {
             let mut stdin = stdin;
@@ -315,7 +325,8 @@ fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result
                 .map_err(|error| format!("cannot read Git error output: {error}"))
         });
 
-        let processing = (|| {
+        let processing = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut diagnostic_output = io::stderr().lock();
             let mut failed = false;
             for oid in &commits {
                 let object = read_batch_object(&mut stdout, oid)?;
@@ -323,14 +334,18 @@ fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result
                 let message = std::str::from_utf8(bytes)
                     .map_err(|error| format!("commit {oid} message is not valid UTF-8: {error}"))?;
                 for diagnostic in lint::lint(message, config) {
-                    eprintln!(
+                    writeln!(
+                        diagnostic_output,
                         "{}:{}: {}[{}] {}",
                         oid,
                         diagnostic.line,
                         diagnostic.severity,
                         diagnostic.rule,
                         diagnostic.message
-                    );
+                    )
+                    .map_err(|error| {
+                        format!("cannot write diagnostic to standard error: {error}")
+                    })?;
                     failed |= diagnostic.severity == config::Severity::Error || strict;
                 }
             }
@@ -343,12 +358,14 @@ fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result
                 return Err("unexpected extra output from Git while reading commits".to_owned());
             }
             Ok(failed)
-        })();
+        }))
+        .unwrap_or_else(|_| Err("commit processing panicked".to_owned()));
 
         if processing.is_err() {
-            let _ = child.kill();
+            let _ = child.0.kill();
         }
         let status = child
+            .0
             .wait()
             .map_err(|error| format!("cannot wait for Git: {error}"));
         let input_result = writer
@@ -455,7 +472,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
-            eprintln!("commit-msg-lint: {error}");
+            let _ = writeln!(io::stderr().lock(), "commit-msg-lint: {error}");
             ExitCode::from(2)
         }
     }
