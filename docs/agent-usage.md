@@ -1,7 +1,8 @@
 # Using `commit-msg-lint` from an agent
 
-Use `commit-msg-lint` to check one complete commit message. Run
-`commit-msg-lint --help-for-agents` to print this guidance. This option prints the bundled Markdown
+Use `commit-msg-lint` to check one complete commit message. For stored commits and revision ranges,
+see the [CLI history input guide](cli.md#history-input). Run `commit-msg-lint --help-for-agents` to
+print this guidance. This option prints the bundled Markdown
 without reading standard input, invoking Git, discovering or loading configuration, or reading
 message-filter environment variables. Do not combine it with other arguments.
 
