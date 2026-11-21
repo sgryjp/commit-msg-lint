@@ -165,8 +165,6 @@ fn selected_commits(revision: &str) -> Result<Vec<String>, String> {
             right,
             symmetric,
         } => {
-            let left = resolve_commit(left)?;
-            let right = resolve_commit(right)?;
             let shallow = git_output(&["rev-parse", "--is-shallow-repository"])?;
             if !shallow.status.success() {
                 return Err(format!(
@@ -181,6 +179,8 @@ fn selected_commits(revision: &str) -> Result<Vec<String>, String> {
                 b"false\n" => {}
                 _ => return Err("invalid shallow repository status from Git".to_owned()),
             }
+            let left = resolve_commit(left)?;
+            let right = resolve_commit(right)?;
             let separator = if symmetric { "..." } else { ".." };
             let range = format!("{left}{separator}{right}");
             let output = git_output(&["rev-list", "--topo-order", "--reverse", &range])?;

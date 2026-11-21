@@ -346,6 +346,7 @@ fn shallow_ranges_warn_even_when_empty_and_check_available_commits() {
     }
     let unavailable = shallow.command(&["--commits", &format!("{missing}..HEAD")], b"");
     assert_eq!(unavailable.status.code(), Some(2));
+    assert!(stderr(&unavailable).contains(warning));
     assert!(stderr(&unavailable).contains("cannot resolve commit revision"));
 }
 
