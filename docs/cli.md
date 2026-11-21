@@ -133,11 +133,12 @@ unfiltered message and line handling; see [message format](message-format.md#inp
 
 An invalid, unavailable, or non-commit revision is an operational error, not an empty selection. A
 valid range that selects no commits succeeds without lint diagnostics. In a shallow repository,
-every range check emits a separate warning that its selection may be incomplete, including an
-empty range. The CLI checks only the history Git can select locally; it does not fetch, deepen, or
-unshallow the repository. The warning does not become a Lint Rule diagnostic and does not fail the
-command by itself, even with `--strict`. A single-commit check does not get this warning solely
-because the repository is shallow.
+every successfully selected range emits a separate warning that its selection may be incomplete,
+including an empty range. The CLI checks only the history Git can select locally; it does not fetch,
+deepen, or unshallow the repository. The warning does not become a Lint Rule diagnostic and does
+not fail the command by itself, even with `--strict`: it flags a coverage risk rather than a message
+violation. A single-commit check does not get this warning solely because the repository is shallow.
+History checks do not print summary counts.
 
 For complete CI coverage, make sure the checkout has enough connected history for the selected
 range. For example, GitHub Actions can fetch full history with `actions/checkout`'s `fetch-depth: 0`.
@@ -145,11 +146,13 @@ Otherwise fetch or deepen the base and head history as needed before running the
 will not do this automatically. A shallow clone can resolve both endpoints and still omit commits
 that an unshallow history would select.
 
-For a pull request, choose the revisions that match the event and commit set you intend to inspect.
-A three-dot range is Git's symmetric difference, not a guarantee of the exact commit list shown by
-every hosting service. History linting checks the selected stored commits; it does not check a
-future squash-merge message. A squash merge creates a new commit with its own message, which must
-be checked separately after it exists.
+For a push, `"$BEFORE_SHA..$AFTER_SHA"` checks commits reachable from the new tip but not the old
+tip, when both revisions are available. For a pull request, `"$BASE_SHA..$HEAD_SHA"` checks commits
+reachable from the head but not the base. Choose revisions that match the event and commit set you
+intend to inspect: a three-dot range is Git's symmetric difference, not a guarantee of the exact
+commit list shown by every hosting service. History linting checks the selected stored commits; it
+does not check a future squash-merge message. A squash merge creates a new commit with its own
+message, which must be checked separately after it exists.
 
 ## Message filtering
 

@@ -93,8 +93,17 @@ fn load_config(config_path: Option<PathBuf>) -> Result<config::Config, String> {
     }
 }
 
+fn history_git_command() -> std::process::Command {
+    let mut command = cli_policy::git_command();
+    // Older Git versions ignore GIT_NO_LAZY_FETCH; deny transports as a fallback.
+    command
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_ALLOW_PROTOCOL", "");
+    command
+}
+
 fn git_output(args: &[&str]) -> Result<std::process::Output, String> {
-    cli_policy::git_command()
+    history_git_command()
         .args(args)
         .env("LC_ALL", "C")
         .output()
@@ -171,16 +180,26 @@ fn parse_commit_selection(revision: &str) -> Result<CommitSelection<'_>, String>
 fn selected_commits(revision: &str) -> Result<Vec<String>, String> {
     let (left, right, symmetric) = match resolve_commit(revision) {
         Ok(oid) => return Ok(vec![oid]),
-        Err(single_error) => match parse_commit_selection(revision) {
-            Ok(CommitSelection::Single) => return Err(single_error),
-            Ok(CommitSelection::Range {
+        Err(single_error) => match parse_commit_selection(revision)? {
+            CommitSelection::Single => return Err(single_error),
+            CommitSelection::Range {
                 left,
                 right,
                 symmetric,
-            }) => (left, right, symmetric),
-            Err(range_error) => return Err(range_error),
+            } => (left, right, symmetric),
         },
     };
+    let left = resolve_commit(left)?;
+    let right = resolve_commit(right)?;
+    let separator = if symmetric { "..." } else { ".." };
+    let range = format!("{left}{separator}{right}");
+    let output = git_output(&["rev-list", "--topo-order", "--reverse", &range])?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot select commits in range {revision:?}: {}",
+            git_error(&output)
+        ));
+    }
     let shallow = git_output(&["rev-parse", "--is-shallow-repository"])?;
     if !shallow.status.success() {
         return Err(format!(
@@ -198,17 +217,6 @@ fn selected_commits(revision: &str) -> Result<Vec<String>, String> {
         })?,
         b"false\n" => {}
         _ => return Err("invalid shallow repository status from Git".to_owned()),
-    }
-    let left = resolve_commit(left)?;
-    let right = resolve_commit(right)?;
-    let separator = if symmetric { "..." } else { ".." };
-    let range = format!("{left}{separator}{right}");
-    let output = git_output(&["rev-list", "--topo-order", "--reverse", &range])?;
-    if !output.status.success() {
-        return Err(format!(
-            "cannot select commits in range {revision:?}: {}",
-            git_error(&output)
-        ));
     }
     let Some(ids) = output.stdout.strip_suffix(b"\n") else {
         if output.stdout.is_empty() {
@@ -297,7 +305,7 @@ fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result
         return Ok(0);
     }
 
-    let mut child = cli_policy::git_command()
+    let mut child = history_git_command()
         .args(["cat-file", "--batch"])
         .env("LC_ALL", "C")
         .stdin(Stdio::piped())
@@ -478,6 +486,26 @@ fn main() -> ExitCode {
         Err(error) => {
             let _ = writeln!(io::stderr().lock(), "commit-msg-lint: {error}");
             ExitCode::from(2)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn only_history_git_commands_override_fetch_environment() {
+        let ordinary = cli_policy::git_command();
+        for (name, value) in [("GIT_NO_LAZY_FETCH", "1"), ("GIT_ALLOW_PROTOCOL", "")] {
+            assert!(!ordinary.get_envs().any(|(key, _)| key == OsStr::new(name)));
+            assert!(
+                history_git_command()
+                    .get_envs()
+                    .any(|(key, actual)| key == OsStr::new(name)
+                        && actual == Some(OsStr::new(value)))
+            );
         }
     }
 }

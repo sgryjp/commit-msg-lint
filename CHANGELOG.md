@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Lint a stored Git commit or explicit commit range with `--commits`, including a warning when a
+  shallow repository may leave range coverage incomplete.
+
 ## [0.0.2] - 2026-11-18
 
 ### Added
