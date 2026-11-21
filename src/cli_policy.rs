@@ -53,8 +53,11 @@ fn read_boolean(name: &str) -> Result<bool, String> {
 
 pub fn git_command() -> Command {
     let mut command = Command::new("git");
-    // Preserve history mode's no-automatic-fetch contract in partial clones.
-    command.env("GIT_NO_LAZY_FETCH", "1");
+    // GIT_NO_LAZY_FETCH prevents lazy fetches on Git 2.45 and newer. On older Git,
+    // deny every transport so an automatic fetch cannot contact a promisor remote.
+    command
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_ALLOW_PROTOCOL", "");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
