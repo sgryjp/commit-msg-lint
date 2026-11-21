@@ -140,6 +140,23 @@ impl TestDir {
         let _ = child.stdin.take().unwrap().write_all(input);
         child.wait_with_output().unwrap()
     }
+
+    #[cfg(unix)]
+    fn command_with_closed_stderr(&self, args: &[&str]) -> Output {
+        let mut command = self.isolated_command("sh");
+        let mut child = command
+            .args(["-c", "IFS= read -r _; exec \"$@\"", "wait-for-input"])
+            .arg(env!("CARGO_BIN_EXE_commit-msg-lint"))
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stderr.take());
+        child.stdin.take().unwrap().write_all(b"go\n").unwrap();
+        child.wait_with_output().unwrap()
+    }
 }
 
 impl Drop for TestDir {
@@ -521,6 +538,36 @@ fn shallow_ranges_warn_even_when_empty_and_check_available_commits() {
     assert_eq!(unavailable.status.code(), Some(2));
     assert!(stderr(&unavailable).contains(warning));
     assert!(stderr(&unavailable).contains("cannot resolve commit revision"));
+}
+
+#[cfg(unix)]
+#[test]
+fn shallow_range_warning_write_failure_returns_operational_exit_code() {
+    let source = TestDir::new();
+    source.init_repository();
+    for message in ["feat: old", "feat: middle", "feat: newest"] {
+        source.git(&["commit", "--allow-empty", "--quiet", "-m", message]);
+    }
+
+    let shallow = TestDir::new();
+    shallow.git(&[
+        "clone",
+        "--quiet",
+        "--no-local",
+        "--depth",
+        "2",
+        source.0.to_str().unwrap(),
+        ".",
+    ]);
+    assert_eq!(
+        shallow.git_stdout(&["rev-parse", "--is-shallow-repository"]),
+        "true"
+    );
+
+    let output = shallow.command_with_closed_stderr(&["--commits", "HEAD^..HEAD"]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
 }
 
 #[test]
