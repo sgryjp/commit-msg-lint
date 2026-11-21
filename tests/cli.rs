@@ -375,6 +375,73 @@ fn native_git_range_accepts_double_dots_inside_a_message_search_endpoint() {
 }
 
 #[test]
+fn ranges_accept_double_dots_inside_a_left_ancestor_message_search() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let base = dir.create_raw_commit(b"feat: marker a..b\n", None);
+    let selected = dir.create_raw_commit_with_parent(b"invalid selected..tip\n", None, Some(&base));
+    assert_eq!(dir.git_stdout(&["rev-parse", "HEAD~1^{/a..b}"]), base);
+
+    for range in [
+        "HEAD~1^{/a..b}..HEAD",
+        "HEAD~1^{/a..b}...HEAD",
+        ":/a..b..HEAD",
+        "HEAD~1^{/a..b}..:/selected..tip",
+    ] {
+        let output = dir.command(&["--commits", range], b"");
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{range}: {}",
+            stderr(&output)
+        );
+        assert_eq!(
+            stderr(&output),
+            format!(
+                "{selected}:1: error[header-format] header does not match the Conventional Commit format\n"
+            )
+        );
+    }
+}
+
+#[test]
+fn ambiguous_range_separators_are_rejected_instead_of_guessing() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let first = dir.create_raw_commit(b"feat: foo leftXX:/!-foo\n", None);
+    let last = dir.create_raw_commit_with_parent(b"feat: foo right\n", None, Some(&first));
+    for (revision, expected) in [
+        (":/left", &first),
+        (":/left..:/!-foo", &first),
+        (":/!-foo..:/right", &last),
+        (":/right", &last),
+    ] {
+        assert_eq!(
+            dir.git_stdout(&["rev-parse", "--verify", revision]),
+            *expected
+        );
+    }
+
+    let output = dir.command(&["--commits", ":/left..:/!-foo..:/right"], b"");
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(stderr(&output).contains("ambiguous commit range"));
+}
+
+#[test]
+fn overlapping_two_dot_and_three_dot_range_splits_are_rejected_when_ambiguous() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    let base = dir.create_raw_commit(b"feat: needleX\n", None);
+    dir.create_raw_commit_with_parent(b"feat: head\n", None, Some(&base));
+    assert_eq!(dir.git_stdout(&["rev-parse", ":/needle"]), base);
+    assert_eq!(dir.git_stdout(&["rev-parse", ":/needle."]), base);
+
+    let output = dir.command(&["--commits", ":/needle...HEAD"], b"");
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(stderr(&output).contains("ambiguous commit range"));
+}
+
+#[test]
 fn a_two_dot_range_checks_only_commits_reachable_from_the_right_endpoint() {
     let dir = TestDir::new();
     dir.init_repository();
@@ -841,6 +908,32 @@ fn missing_non_commit_and_incomplete_range_endpoints_are_operational_errors() {
 }
 
 #[test]
+fn revision_sets_cannot_be_used_as_a_single_commit_or_range_endpoint() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: base"]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: child"]);
+    for revision in [
+        "HEAD^!",
+        "HEAD^@",
+        "HEAD^-",
+        "HEAD..HEAD..HEAD",
+        "HEAD...HEAD..HEAD",
+        "HEAD..HEAD^!",
+        "HEAD^!..HEAD",
+    ] {
+        let output = dir.command(&["--commits", revision], b"");
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{revision}: {}",
+            stderr(&output)
+        );
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
 fn history_lint_checks_saved_comments_and_scissors_without_filter_environment() {
     let dir = TestDir::new();
     dir.init_repository();
@@ -889,7 +982,15 @@ fn history_uses_git_utf8_conversion_and_stops_at_embedded_nul() {
     assert!(stderr(&output).contains(&format!("commit {invalid} message is not valid UTF-8")));
     assert!(!stderr(&output).contains("error["));
 
-    let nul = dir.create_raw_commit(b"feat: nul\0in-message\n", None);
+    let suffix = format!("\n\n{}\n", "x".repeat(73));
+    let visible = dir.create_raw_commit(format!("feat: nul{suffix}").as_bytes(), None);
+    let output = dir.command(&["--commits", &visible], b"");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("error[body-max-width]"));
+
+    let mut truncated = b"feat: nul\0".to_vec();
+    truncated.extend_from_slice(suffix.as_bytes());
+    let nul = dir.create_raw_commit(&truncated, None);
     let output = dir.command(&["--commits", &nul], b"");
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(output.stdout.is_empty() && output.stderr.is_empty());

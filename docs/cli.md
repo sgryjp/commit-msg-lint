@@ -100,7 +100,10 @@ Single-commit and explicit range checks are available.
 Use `--commits` to check a stored Git commit or a range. The argument must be one revision that
 resolves to a commit, or a range with two explicit endpoints separated by `..` or `...`. Revisions
 can be commit IDs or refs such as branch and tag names. A single revision selects exactly that
-commit, not its ancestors. A two-dot range `A..B` selects commits
+commit, not its ancestors. An argument that resolves as a single commit is treated as one revision,
+even if it contains `..`. Otherwise, both endpoints must resolve to commits. If more than one split
+into valid endpoints is possible, the range is rejected; use unambiguous revisions or commit IDs.
+A two-dot range `A..B` selects commits
 reachable from `B` but not `A`; a three-dot range `A...B` selects the symmetric difference: commits
 reachable from either endpoint but not both. For example:
 
@@ -114,8 +117,8 @@ These are Git's revision-selection semantics. The selected commits are reported 
 topological order, so parents precede descendants; Git determines the order of unrelated commits.
 Within each commit, diagnostics retain the usual line and Rule ID ordering. Every history
 diagnostic identifies the complete commit object ID and the one-based line in Git's output message;
-the object ID length depends on the repository's hash format. A successful run with no diagnostics or
-operational warnings prints nothing. Diagnostics and operational warnings go to standard error.
+the object ID length depends on the repository's hash format. A successful run with no diagnostics
+prints nothing. Lint diagnostics and operational errors go to standard error.
 
 History linting uses the same discovered configuration as other CLI input, or the file selected by
 `--config`. The configured Lint Rules, severities, Display Column measurement, and Ignored Message
@@ -251,8 +254,8 @@ ID. For example,
 <stdin>:1: error[header-format] header does not match the Conventional Commit format
 ```
 
-A successful lint run with no diagnostics or operational warnings prints nothing. Warnings are still
-printed to standard error when they do not cause failure, so exit code `0` does not mean there were
+A successful lint run with no diagnostics prints nothing. Warnings are still printed to standard
+error when they do not cause failure, so exit code `0` does not mean there were
 no warnings.
 `--strict` promotes Lint Rule warnings to exit code `1` only when explicitly supplied; the CLI
 does not force strict mode for agents. A shallow repository is an operational error for history
