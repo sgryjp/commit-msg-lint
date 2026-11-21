@@ -3,6 +3,10 @@
 When designing or reviewing changes, check them against the
 [design philosophy](README.md#design-philosophy) and explain any trade-offs.
 
+## Issues and pull requests
+
+Write issues and pull requests in English, including drafts.
+
 ## Agent skills
 
 ### Issue tracker
