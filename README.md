@@ -1,7 +1,7 @@
 # commit-msg-lint
 
-A Rust CLI that checks a single commit message against Conventional Commit Rules, with configurable
-limits and severities. [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/) without
+A Rust CLI that checks a single commit message or a message stored in one Git commit against
+Conventional Commit Rules, with configurable limits and severities. [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/) without
 installing anything: it checks in-browser without the CLI's comment or scissors filtering. The
 message and configuration are not sent to a server.
 
@@ -24,6 +24,7 @@ From a checkout with the Rust toolchain installed, build and install the CLI:
 cargo install --path .
 printf 'feat: add parser\n' | commit-msg-lint
 commit-msg-lint --edit .git/COMMIT_EDITMSG
+commit-msg-lint --commits HEAD
 ```
 
 For example, `printf 'feat:subject\n' | commit-msg-lint` reports:

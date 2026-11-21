@@ -10,7 +10,7 @@ use std::process::ExitCode;
 #[command(
     name = "commit-msg-lint",
     version,
-    about = "Lint a commit message using the configured Rules."
+    about = "Lint a message from standard input, a file, or one Git commit."
 )]
 struct Arguments {
     #[arg(
@@ -19,6 +19,13 @@ struct Arguments {
         help = "Read the message from a file instead of standard input."
     )]
     edit: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "REVISION",
+        conflicts_with = "edit",
+        help = "Lint the message stored in one Git commit."
+    )]
+    commits: Option<String>,
     #[arg(
         long,
         value_name = "PATH",
@@ -70,6 +77,83 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
     }
 }
 
+fn load_config(config_path: Option<PathBuf>) -> Result<config::Config, String> {
+    let config_path = match config_path {
+        Some(path) => Some(path),
+        None => discover_config()?,
+    };
+    match config_path {
+        Some(path) => {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+            config::Config::parse(&content)
+                .map_err(|e| format!("invalid configuration {}: {e}", path.display()))
+        }
+        None => Ok(config::Config::default()),
+    }
+}
+
+fn git_output(args: &[&str]) -> Result<std::process::Output, String> {
+    cli_policy::git_command()
+        .args(args)
+        .env("LC_ALL", "C")
+        .output()
+        .map_err(|e| format!("cannot run Git: {e}"))
+}
+
+fn git_error(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stderr).trim().to_owned()
+}
+
+fn resolve_commit(revision: &str) -> Result<String, String> {
+    if revision.starts_with('-') {
+        return Err("commit revision must not begin with '-'".to_owned());
+    }
+    let expression = format!("{revision}^{{commit}}");
+    let output = git_output(&["rev-parse", "--verify", "--end-of-options", &expression])?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot resolve commit revision {revision:?}: {}",
+            git_error(&output)
+        ));
+    }
+    let oid = output
+        .stdout
+        .strip_suffix(b"\n")
+        .filter(|oid| !oid.is_empty() && oid.iter().all(u8::is_ascii_hexdigit))
+        .ok_or_else(|| "invalid commit ID from Git".to_owned())?;
+    String::from_utf8(oid.to_vec()).map_err(|e| format!("invalid commit ID from Git: {e}"))
+}
+
+fn commit_message(oid: &str) -> Result<String, String> {
+    let output = git_output(&["cat-file", "commit", oid])?;
+    if !output.status.success() {
+        return Err(format!("cannot read commit {oid}: {}", git_error(&output)));
+    }
+    let separator = output
+        .stdout
+        .windows(2)
+        .position(|window| window == b"\n\n")
+        .ok_or_else(|| format!("cannot read commit {oid}: malformed commit object"))?;
+    let message = std::str::from_utf8(&output.stdout[separator + 2..])
+        .map_err(|e| format!("commit {oid} message is not valid UTF-8: {e}"))?;
+    Ok(message.to_owned())
+}
+
+fn lint_commit(revision: &str, config: &config::Config, strict: bool) -> Result<u8, String> {
+    let oid = resolve_commit(revision)?;
+    let message = commit_message(&oid)?;
+    let mut failed = false;
+    for diagnostic in lint::lint(&message, config) {
+        eprintln!(
+            "{}:{}: {}[{}] {}",
+            oid, diagnostic.line, diagnostic.severity, diagnostic.rule, diagnostic.message
+        );
+        failed |= diagnostic.severity == config::Severity::Error || strict;
+    }
+    Ok(u8::from(failed))
+}
+
 fn write_stdout(content: &str, description: &str) -> Result<(), String> {
     let mut stdout = io::stdout().lock();
     stdout
@@ -108,21 +192,14 @@ fn run() -> Result<u8, String> {
         return Ok(0);
     }
 
+    if let Some(revision) = args.commits.as_deref() {
+        let config = load_config(args.config)?;
+        return lint_commit(revision, &config, args.strict);
+    }
+
     let policy = cli_policy::FilterPolicy::from_environment()?;
     let prefix = policy.comment_prefix()?;
-    let config_path = match args.config {
-        Some(path) => Some(path),
-        None => discover_config()?,
-    };
-    let config = match config_path {
-        Some(path) => {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-            config::Config::parse(&content)
-                .map_err(|e| format!("invalid configuration {}: {e}", path.display()))?
-        }
-        None => config::Config::default(),
-    };
+    let config = load_config(args.config)?;
     let (source, input) = match args.edit {
         Some(path) => {
             let content = std::fs::read_to_string(&path)
