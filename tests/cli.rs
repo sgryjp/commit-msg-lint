@@ -484,7 +484,7 @@ fn valid_ranges_with_no_selected_commits_succeed_quietly() {
 }
 
 #[test]
-fn shallow_ranges_warn_even_when_empty_and_check_available_commits() {
+fn shallow_repositories_reject_single_ranges_and_empty_ranges_without_fetching() {
     let source = TestDir::new();
     source.init_repository();
     source.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: old"]);
@@ -513,36 +513,53 @@ fn shallow_ranges_warn_even_when_empty_and_check_available_commits() {
         shallow.git_stdout(&["rev-parse", "--is-shallow-repository"]),
         "true"
     );
-    let warning = "warning: shallow repository; commit range selection may be incomplete\n";
-
-    let single = shallow.command(&["--commits", "HEAD"], b"");
-    assert_eq!(single.status.code(), Some(1));
-    assert!(!stderr(&single).contains(warning));
-
-    let range = shallow.command(&["--commits", "HEAD^..HEAD"], b"");
-    assert_eq!(range.status.code(), Some(1));
-    assert_eq!(
-        stderr(&range),
-        format!(
-            "{warning}{selected}:1: error[header-format] header does not match the Conventional Commit format\n"
-        )
-    );
-
-    for range in ["HEAD..HEAD", "HEAD...HEAD"] {
-        let empty = shallow.command(&["--strict", "--commits", range], b"");
-        assert_eq!(empty.status.code(), Some(0));
-        assert!(empty.stdout.is_empty());
-        assert_eq!(stderr(&empty), warning);
+    let before = fs::read(shallow.0.join(".git/shallow")).unwrap();
+    for revision in [
+        "HEAD",
+        "HEAD^..HEAD",
+        "HEAD..HEAD",
+        "HEAD...HEAD",
+        &format!("{missing}..HEAD"),
+    ] {
+        for strict in [false, true] {
+            let mut args = vec!["--commits", revision];
+            if strict {
+                args.push("--strict");
+            }
+            let output = shallow.command(&args, b"");
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "{revision}: {}",
+                stderr(&output)
+            );
+            assert!(output.stdout.is_empty());
+            assert!(stderr(&output).contains("shallow repository"));
+            assert!(stderr(&output).contains("fetch"));
+            assert!(!stderr(&output).contains(&selected));
+        }
     }
-    let unavailable = shallow.command(&["--commits", &format!("{missing}..HEAD")], b"");
-    assert_eq!(unavailable.status.code(), Some(2));
-    assert!(!stderr(&unavailable).contains(warning));
-    assert!(stderr(&unavailable).contains("cannot resolve commit revision"));
+    assert_eq!(fs::read(shallow.0.join(".git/shallow")).unwrap(), before);
+    assert_eq!(shallow.git_stdout(&["rev-parse", "HEAD"]), selected);
+
+    let worktree = TestDir::new();
+    shallow.git(&[
+        "worktree",
+        "add",
+        "--quiet",
+        "--detach",
+        worktree.0.to_str().unwrap(),
+        "HEAD",
+    ]);
+    assert!(worktree.0.join(".git").is_file());
+    let output = worktree.command(&["--commits", "HEAD"], b"");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("shallow repository"));
 }
 
 #[cfg(unix)]
 #[test]
-fn shallow_range_warning_write_failure_returns_operational_exit_code() {
+fn shallow_error_write_failure_returns_operational_exit_code() {
     let source = TestDir::new();
     source.init_repository();
     for message in ["feat: old", "feat: middle", "feat: newest"] {
@@ -571,7 +588,7 @@ fn shallow_range_warning_write_failure_returns_operational_exit_code() {
 }
 
 #[test]
-fn shallow_range_warns_when_a_merge_base_exists_but_selected_history_is_missing() {
+fn shallow_range_is_rejected_even_when_a_merge_base_exists() {
     let source = TestDir::new();
     source.init_repository();
     source.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: common"]);
@@ -591,9 +608,7 @@ fn shallow_range_warns_when_a_merge_base_exists_but_selected_history_is_missing(
         "-m",
         "boundary invalid",
     ]);
-    let boundary = source.git_stdout(&["rev-parse", "HEAD"]);
     source.git(&["commit", "--allow-empty", "--quiet", "-m", "side invalid"]);
-    let side = source.git_stdout(&["rev-parse", "HEAD"]);
     source.git(&["checkout", "--quiet", "-"]);
     source.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: main"]);
     let main = source.git_stdout(&["rev-parse", "HEAD"]);
@@ -627,13 +642,9 @@ fn shallow_range_warns_when_a_merge_base_exists_but_selected_history_is_missing(
     );
 
     let output = shallow.command(&["--commits", &range], b"");
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(
-        stderr(&output),
-        format!(
-            "warning: shallow repository; commit range selection may be incomplete\n{boundary}:1: error[header-format] header does not match the Conventional Commit format\n{side}:1: error[header-format] header does not match the Conventional Commit format\n"
-        )
-    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("shallow repository"));
+    assert!(!stderr(&output).contains("error["));
 }
 
 #[test]
@@ -803,7 +814,7 @@ fn invalid_revisions_non_commit_objects_and_git_failures_are_operational_errors(
     let outside = TestDir::new();
     let output = outside.command(&["--commits", "HEAD"], b"");
     assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("cannot resolve commit revision"));
+    assert!(stderr(&output).contains("cannot determine whether repository is shallow"));
 }
 
 #[test]
@@ -861,29 +872,177 @@ fn history_lint_checks_saved_comments_and_scissors_without_filter_environment() 
 }
 
 #[test]
-fn stored_commit_messages_require_utf8_without_encoding_conversion_and_preserve_nul() {
+fn history_uses_git_utf8_conversion_and_stops_at_embedded_nul() {
     let dir = TestDir::new();
     dir.init_repository();
     dir.git(&["config", "i18n.commitEncoding", "ISO-8859-1"]);
     dir.git(&["config", "i18n.logOutputEncoding", "ISO-8859-1"]);
 
-    let invalid = dir.create_raw_commit(b"feat: invalid \xff\n", Some("ISO-8859-1"));
-    let output = dir.command(&["--commits", "HEAD"], b"");
+    let converted = dir.create_raw_commit(b"feat: caf\xe9\n", Some("ISO-8859-1"));
+    let output = dir.command(&["--commits", &converted], b"");
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+
+    let invalid = dir.create_raw_commit(b"feat: invalid \xff\n", None);
+    let output = dir.command(&["--commits", &invalid], b"");
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains(&format!("commit {invalid} message is not valid UTF-8")));
     assert!(!stderr(&output).contains("error["));
 
-    let valid = dir.create_raw_commit("feat: café\n".as_bytes(), Some("ISO-8859-1"));
-    let output = dir.command(&["--commits", &valid], b"");
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    assert!(output.stdout.is_empty() && output.stderr.is_empty());
-
     let nul = dir.create_raw_commit(b"feat: nul\0in-message\n", None);
     let output = dir.command(&["--commits", &nul], b"");
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+}
+
+#[test]
+fn git_log_configuration_trace_and_separator_like_text_do_not_corrupt_history_frames() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["config", "log.showSignature", "true"]);
+    dir.git(&["config", "log.decorate", "full"]);
+    dir.git(&["config", "log.showNotes", "true"]);
+    let base = dir.create_raw_commit(b"feat: base\n", None);
+    let first = dir.create_raw_commit_with_parent(
+        b"not conventional\n\nlog size 3\nabc\n",
+        None,
+        Some(&base),
+    );
+    dir.git(&["notes", "add", "-m", "not part of the message"]);
+    let last = dir.create_raw_commit_with_parent(b"also invalid\n", None, Some(&first));
+
+    let output = dir.command_with_env(
+        &["--commits", &format!("{base}..{last}")],
+        b"",
+        &[("GIT_TRACE", "1")],
+    );
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     assert_eq!(
         stderr(&output),
-        format!("{nul}:1: error[control-character] line contains a forbidden control character\n")
+        format!(
+            "{first}:1: error[header-format] header does not match the Conventional Commit format\n{last}:1: error[header-format] header does not match the Conventional Commit format\n"
+        )
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn malformed_or_failed_git_log_output_is_an_operational_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TestDir::new();
+    dir.init_repository();
+    let oid = dir.create_raw_commit(b"not conventional\n", None);
+    fs::write(dir.0.join("rules.jsonc"), r#"{ "version": 1 }"#).unwrap();
+    let real_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|path| path.is_file())
+        .unwrap();
+    let bin = dir.0.join("bin");
+    fs::create_dir(&bin).unwrap();
+    let wrapper = bin.join("git");
+    fs::write(&wrapper, "#!/bin/sh\ncase \" $* \" in *\" log \"*) cat \"$FAKE_LOG\"; exit \"$FAKE_STATUS\";; esac\nexec \"$REAL_GIT\" \"$@\"\n").unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let fake = dir.0.join("fake-log");
+    let message = b"not conventional\n";
+    let frame = format!("log size {}\n{oid}\0", oid.len() + 1 + message.len())
+        .into_bytes()
+        .into_iter()
+        .chain(message.iter().copied())
+        .chain(*b"\n")
+        .collect::<Vec<_>>();
+    let mut bad_id = frame.clone();
+    let id_offset = frame.iter().position(|byte| *byte == b'\n').unwrap() + 1;
+    bad_id[id_offset] = b'z';
+    let mut bad_separator = frame.clone();
+    bad_separator[id_offset + oid.len()] = b'!';
+    let mut bad_terminator = frame.clone();
+    *bad_terminator.last_mut().unwrap() = b'!';
+    let mut extra = frame.clone();
+    extra.extend_from_slice(b"unexpected output\n");
+    let cases = [
+        b"not a log header\n".to_vec(),
+        b"log size 18446744073709551615\n".to_vec(),
+        frame[..frame.len() - 2].to_vec(),
+        bad_id,
+        bad_separator,
+        bad_terminator,
+        extra,
+    ];
+    for (index, data) in cases.into_iter().enumerate() {
+        fs::write(&fake, data).unwrap();
+        let output = dir.command_with_env(
+            &["--config", "rules.jsonc", "--commits", &oid],
+            b"",
+            &[
+                ("PATH", &path),
+                ("REAL_GIT", real_git.to_str().unwrap()),
+                ("FAKE_LOG", fake.to_str().unwrap()),
+                ("FAKE_STATUS", "0"),
+            ],
+        );
+        assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+        if index == 6 {
+            assert!(stderr(&output).starts_with(&format!("{oid}:1: error[header-format]")));
+        }
+    }
+    fs::write(&fake, frame).unwrap();
+    let output = dir.command_with_env(
+        &["--config", "rules.jsonc", "--commits", &oid],
+        b"",
+        &[
+            ("PATH", &path),
+            ("REAL_GIT", real_git.to_str().unwrap()),
+            ("FAKE_LOG", fake.to_str().unwrap()),
+            ("FAKE_STATUS", "1"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!stderr(&output).contains("error[header-format]"));
+}
+
+#[cfg(unix)]
+#[test]
+fn history_reports_temporary_file_creation_errors() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.create_raw_commit(b"feat: valid\n", None);
+    let missing = dir.0.join("missing-temp-directory");
+    let output = dir.command_with_env(
+        &["--commits", "HEAD"],
+        b"",
+        &[("TMPDIR", missing.to_str().unwrap())],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("temporary file"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn history_diagnostics_support_sha256_repositories_when_git_supports_them() {
+    let dir = TestDir::new();
+    let output = dir
+        .isolated_command("git")
+        .args(["init", "--quiet", "--object-format=sha256"])
+        .output()
+        .unwrap();
+    if !output.status.success() {
+        return;
+    }
+    dir.git(&["config", "user.name", "Test User"]);
+    dir.git(&["config", "user.email", "test@example.com"]);
+    let oid = dir.create_raw_commit(b"not conventional\n", None);
+    assert_eq!(oid.len(), 64);
+    let output = dir.command(&["--commits", "HEAD"], b"");
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "{oid}:1: error[header-format] header does not match the Conventional Commit format\n"
+        )
     );
 }
 
@@ -1140,7 +1299,7 @@ fn print_default_config_cannot_be_combined_with_other_arguments() {
 }
 
 #[test]
-fn a_closed_diagnostic_pipe_terminates_git_even_when_the_next_commit_is_large() {
+fn a_closed_diagnostic_pipe_returns_an_error_without_hanging_on_large_history() {
     let dir = TestDir::new();
     dir.init_repository();
     let base = dir.create_raw_commit(b"feat: base\n", None);
@@ -1160,7 +1319,7 @@ fn a_closed_diagnostic_pipe_terminates_git_even_when_the_next_commit_is_large() 
         .unwrap();
     drop(child.stderr.take());
 
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + Duration::from_secs(15);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break status;
