@@ -77,12 +77,22 @@ impl TestDir {
     }
 
     fn create_raw_commit(&self, message: &[u8], encoding: Option<&str>) -> String {
+        self.create_raw_commit_with_parent(message, encoding, None)
+    }
+
+    fn create_raw_commit_with_parent(
+        &self,
+        message: &[u8],
+        encoding: Option<&str>,
+        parent: Option<&str>,
+    ) -> String {
         let tree = self.git_with_input(&["mktree"], b"");
         assert!(tree.status.success(), "git mktree: {}", stderr(&tree));
         let tree = String::from_utf8(tree.stdout).unwrap().trim().to_owned();
         let encoding = encoding.map_or_else(String::new, |value| format!("encoding {value}\n"));
+        let parent = parent.map_or_else(String::new, |oid| format!("parent {oid}\n"));
         let mut object = format!(
-            "tree {tree}\nauthor Test User <test@example.com> 0 +0000\ncommitter Test User <test@example.com> 0 +0000\n{encoding}\n"
+            "tree {tree}\n{parent}author Test User <test@example.com> 0 +0000\ncommitter Test User <test@example.com> 0 +0000\n{encoding}\n"
         )
         .into_bytes();
         object.extend_from_slice(message);
@@ -175,6 +185,224 @@ fn a_single_revision_lints_only_the_selected_commit_and_labels_its_full_id() {
 }
 
 #[test]
+fn a_two_dot_range_checks_only_commits_reachable_from_the_right_endpoint() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "not conventional",
+    ]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: start"]);
+    let start = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "not conventional",
+    ]);
+    let selected = dir.git_stdout(&["rev-parse", "HEAD"]);
+
+    let output = dir.command(&["--commits", &format!("{start}..HEAD")], b"");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "{selected}:1: error[header-format] header does not match the Conventional Commit format\n"
+        )
+    );
+}
+
+#[test]
+fn a_three_dot_range_checks_both_sides_of_the_symmetric_difference() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "not conventional",
+    ]);
+    let common = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["checkout", "--quiet", "-b", "left"]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "left invalid"]);
+    let left = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["tag", "left-point"]);
+    dir.git(&["checkout", "--quiet", "-b", "right", &common]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "right invalid"]);
+    let right = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["branch", "right-point"]);
+    let mut native_selection = dir
+        .git_stdout(&[
+            "rev-list",
+            "--topo-order",
+            "--reverse",
+            "refs/tags/left-point...refs/heads/right-point",
+        ])
+        .lines()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    native_selection.sort_unstable();
+    let mut expected_selection = vec![left.clone(), right.clone()];
+    expected_selection.sort_unstable();
+    assert_eq!(native_selection, expected_selection);
+
+    let output = dir.command(
+        &["--commits", "refs/tags/left-point...refs/heads/right-point"],
+        b"",
+    );
+
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let mut diagnostics = stderr(&output).lines().collect::<Vec<_>>();
+    diagnostics.sort_unstable();
+    let mut expected = vec![
+        format!(
+            "{left}:1: error[header-format] header does not match the Conventional Commit format"
+        ),
+        format!(
+            "{right}:1: error[header-format] header does not match the Conventional Commit format"
+        ),
+    ];
+    expected.sort_unstable();
+    assert_eq!(diagnostics, expected);
+}
+
+#[test]
+fn valid_ranges_with_no_selected_commits_succeed_quietly() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
+
+    for range in ["HEAD..HEAD", "HEAD...HEAD"] {
+        let output = dir.command(&["--commits", range], b"");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{range}: {}",
+            stderr(&output)
+        );
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{range}"
+        );
+    }
+}
+
+#[test]
+fn range_diagnostics_aggregate_warnings_and_strict_mode_across_commits() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: base"]);
+    let base = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "not conventional",
+    ]);
+    let first = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "also invalid"]);
+    let second = dir.git_stdout(&["rev-parse", "HEAD"]);
+    fs::write(
+        dir.0.join("rules.jsonc"),
+        r#"{ "version": 1, "rules": { "header-format": { "severity": "warning" } } }"#,
+    )
+    .unwrap();
+
+    let range = format!("{base}..HEAD");
+    for (strict, code) in [(false, 0), (true, 1)] {
+        let mut args = vec!["--config", "rules.jsonc", "--commits", &range];
+        if strict {
+            args.push("--strict");
+        }
+        let output = dir.command(&args, b"");
+        assert_eq!(output.status.code(), Some(code), "strict={strict}");
+        assert_eq!(
+            stderr(&output),
+            format!(
+                "{first}:1: warning[header-format] header does not match the Conventional Commit format\n{second}:1: warning[header-format] header does not match the Conventional Commit format\n"
+            )
+        );
+    }
+}
+
+#[test]
+fn merged_ranges_report_parents_before_descendants_and_keep_diagnostic_order() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: base"]);
+    let base = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["checkout", "--quiet", "-b", "side"]);
+    dir.git(&[
+        "commit",
+        "--cleanup=verbatim",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        " side invalid",
+    ]);
+    let side_parent = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-m",
+        "side child invalid",
+    ]);
+    let side_child = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["checkout", "--quiet", "-"]);
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "main invalid"]);
+    let main_parent = dir.git_stdout(&["rev-parse", "HEAD"]);
+    dir.git(&["merge", "--no-ff", "--quiet", "side"]);
+
+    let output = dir.command(&["--commits", &format!("{base}..HEAD")], b"");
+
+    assert_eq!(output.status.code(), Some(1));
+    let diagnostics = stderr(&output).lines().collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 4, "{diagnostics:?}");
+    let side_parent_diagnostics = diagnostics
+        .iter()
+        .filter(|line| line.starts_with(&format!("{side_parent}:")))
+        .map(|line| (*line).to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        side_parent_diagnostics,
+        vec![
+            format!(
+                "{side_parent}:1: error[header-format] header does not match the Conventional Commit format"
+            ),
+            format!(
+                "{side_parent}:1: error[header-trim] header has leading or trailing whitespace"
+            ),
+        ]
+    );
+    let side_parent_position = diagnostics
+        .iter()
+        .position(|line| line.starts_with(&format!("{side_parent}:")))
+        .unwrap();
+    let side_child_position = diagnostics
+        .iter()
+        .position(|line| line.starts_with(&format!("{side_child}:")))
+        .unwrap();
+    assert!(
+        side_parent_position < side_child_position,
+        "{diagnostics:?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|line| line.starts_with(&format!("{main_parent}:"))),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
 fn a_single_commit_can_be_selected_by_tag_or_full_object_id() {
     let dir = TestDir::new();
     dir.init_repository();
@@ -236,6 +464,29 @@ fn invalid_revisions_non_commit_objects_and_git_failures_are_operational_errors(
 }
 
 #[test]
+fn missing_non_commit_and_incomplete_range_endpoints_are_operational_errors() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: valid"]);
+    let blob = dir.git_with_input(&["hash-object", "-w", "--stdin"], b"not a commit");
+    assert!(blob.status.success());
+    let blob = String::from_utf8(blob.stdout).unwrap().trim().to_owned();
+
+    for range in [
+        "missing..HEAD",
+        "HEAD..missing",
+        "..HEAD",
+        "HEAD..",
+        &format!("{blob}..HEAD"),
+        &format!("HEAD..{blob}"),
+    ] {
+        let output = dir.command(&["--commits", range], b"");
+        assert_eq!(output.status.code(), Some(2), "{range}");
+        assert!(!stderr(&output).is_empty(), "{range}");
+    }
+}
+
+#[test]
 fn history_lint_checks_saved_comments_and_scissors_without_filter_environment() {
     let dir = TestDir::new();
     dir.init_repository();
@@ -291,6 +542,29 @@ fn stored_commit_messages_require_utf8_without_encoding_conversion_and_preserve_
         stderr(&output),
         format!("{nul}:1: error[control-character] line contains a forbidden control character\n")
     );
+}
+
+#[test]
+fn a_later_invalid_message_preserves_prior_diagnostics_and_stops_the_range() {
+    let dir = TestDir::new();
+    dir.init_repository();
+    dir.git(&["commit", "--allow-empty", "--quiet", "-m", "feat: base"]);
+    let base = dir.git_stdout(&["rev-parse", "HEAD"]);
+    let first = dir.create_raw_commit_with_parent(b"not conventional\n", None, Some(&base));
+    let invalid = dir.create_raw_commit_with_parent(b"feat: invalid \xff\n", None, Some(&first));
+    let later =
+        dir.create_raw_commit_with_parent(b"another invalid message\n", None, Some(&invalid));
+
+    let output = dir.command(&["--commits", &format!("{base}..{later}")], b"");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let diagnostics = stderr(&output);
+    assert!(diagnostics.starts_with(&format!(
+        "{first}:1: error[header-format] header does not match the Conventional Commit format\n"
+    )));
+    assert!(diagnostics.contains(&format!("commit {invalid} message is not valid UTF-8")));
+    assert!(!diagnostics.contains(&later));
 }
 
 #[test]
@@ -370,7 +644,16 @@ fn revisions_are_not_interpreted_as_git_options_or_shell_commands() {
 
     let command = dir.command(&["--commits", "$(touch shell-injection-marker)"], b"");
     assert_eq!(command.status.code(), Some(2));
+    let range_option = dir.command(&["--commits", "HEAD..--upload-pack=unexpected"], b"");
+    assert_eq!(range_option.status.code(), Some(2));
+    assert!(stderr(&range_option).contains("must not begin with '-'"));
+    let range_command = dir.command(
+        &["--commits", "HEAD..$(touch range-shell-injection-marker)"],
+        b"",
+    );
+    assert_eq!(range_command.status.code(), Some(2));
     assert!(!dir.0.join("shell-injection-marker").exists());
+    assert!(!dir.0.join("range-shell-injection-marker").exists());
 }
 
 #[test]
@@ -380,7 +663,9 @@ fn help_explains_how_each_option_affects_linting() {
     assert_eq!(output.status.code(), Some(0));
     let help = std::str::from_utf8(&output.stdout).unwrap();
     assert!(help.contains("Read the message from a file instead of standard input."));
-    assert!(help.contains("Lint the message stored in one Git commit."));
+    assert!(
+        help.contains("Lint messages stored in one commit or selected by an explicit Git range.")
+    );
     assert!(help.contains("Use the specified configuration file instead of discovering one."));
     assert!(
         help.contains(

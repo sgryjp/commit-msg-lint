@@ -1,9 +1,10 @@
 # commit-msg-lint
 
-A Rust CLI that checks a commit message or a message stored in one Git commit against Conventional
-Commit Rules, with configurable limits and severities. [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/) without
-installing anything: it checks in-browser without the CLI's comment or scissors filtering. The
-message and configuration are not sent to a server.
+A Rust CLI that checks a commit message or messages stored in selected Git commits against
+Conventional Commit Rules, with configurable limits and severities. [Try the browser
+demo](https://sgryjp.github.io/commit-msg-lint/) without installing anything: it checks in-browser
+without the CLI's comment or scissors filtering. The message and configuration are not sent to a
+server.
 
 ## Design philosophy
 
@@ -106,8 +107,9 @@ Redirection overwrites the destination files. See the
 
 - Lint Rule warnings can print while the command succeeds; `--strict` makes them fail. See
   [exit codes](docs/cli.md#diagnostics-and-exit-codes).
-- Git range linting is not yet implemented. The [history input guide](docs/cli.md#history-input)
-  documents the planned range behavior, including its shallow-repository warning.
+- History input accepts one Git revision or explicit two-dot and three-dot ranges. The
+  [history input guide](docs/cli.md#history-input) explains Git selection semantics and CI history
+  requirements.
 - For standard input and `--edit`, CLI comment and scissors filtering is enabled by default and
   approximates Git cleanup, so the checked content can differ from what Git retains. See
   [filtering](docs/cli.md#message-filtering). History input checks stored messages without those

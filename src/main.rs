@@ -4,13 +4,13 @@ use clap::Parser;
 use commit_msg_lint::{config, lint, schema};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{ExitCode, Stdio};
 
 #[derive(Parser)]
 #[command(
     name = "commit-msg-lint",
     version,
-    about = "Lint a message from standard input, a file, or one Git commit."
+    about = "Lint a message from standard input, a file, or selected Git commits."
 )]
 struct Arguments {
     #[arg(
@@ -21,9 +21,9 @@ struct Arguments {
     edit: Option<PathBuf>,
     #[arg(
         long,
-        value_name = "REVISION",
+        value_name = "REVISION-OR-RANGE",
         conflicts_with = "edit",
-        help = "Lint the message stored in one Git commit."
+        help = "Lint messages stored in one commit or selected by an explicit Git range."
     )]
     commits: Option<String>,
     #[arg(
@@ -125,31 +125,176 @@ fn resolve_commit(revision: &str) -> Result<String, String> {
     String::from_utf8(oid.to_vec()).map_err(|e| format!("invalid commit ID from Git: {e}"))
 }
 
-fn commit_message(oid: &str) -> Result<String, String> {
-    let output = git_output(&["cat-file", "commit", oid])?;
-    if !output.status.success() {
-        return Err(format!("cannot read commit {oid}: {}", git_error(&output)));
+enum CommitSelection<'a> {
+    Single(&'a str),
+    Range {
+        left: &'a str,
+        right: &'a str,
+        symmetric: bool,
+    },
+}
+
+fn parse_commit_selection(revision: &str) -> Result<CommitSelection<'_>, String> {
+    let Some(separator) = revision.find("..") else {
+        return Ok(CommitSelection::Single(revision));
+    };
+    let left = &revision[..separator];
+    let rest = &revision[separator + 2..];
+    let (right, symmetric) = if let Some(right) = rest.strip_prefix('.') {
+        (right, true)
+    } else {
+        (rest, false)
+    };
+    if left.is_empty() || right.is_empty() || right.starts_with('.') || right.contains("..") {
+        return Err(
+            "commit range must have two explicit endpoints separated by '..' or '...'".to_owned(),
+        );
     }
-    let separator = output
-        .stdout
+    Ok(CommitSelection::Range {
+        left,
+        right,
+        symmetric,
+    })
+}
+
+fn selected_commits(revision: &str) -> Result<Vec<String>, String> {
+    match parse_commit_selection(revision)? {
+        CommitSelection::Single(revision) => Ok(vec![resolve_commit(revision)?]),
+        CommitSelection::Range {
+            left,
+            right,
+            symmetric,
+        } => {
+            let left = resolve_commit(left)?;
+            let right = resolve_commit(right)?;
+            let separator = if symmetric { "..." } else { ".." };
+            let range = format!("{left}{separator}{right}");
+            let output = git_output(&["rev-list", "--topo-order", "--reverse", &range])?;
+            if !output.status.success() {
+                return Err(format!(
+                    "cannot select commits in range {revision:?}: {}",
+                    git_error(&output)
+                ));
+            }
+            let Some(ids) = output.stdout.strip_suffix(b"\n") else {
+                if output.stdout.is_empty() {
+                    return Ok(Vec::new());
+                }
+                return Err("invalid commit IDs from Git".to_owned());
+            };
+            ids.split(|byte| *byte == b'\n')
+                .map(|id| {
+                    if id.is_empty() || !id.iter().all(u8::is_ascii_hexdigit) {
+                        return Err("invalid commit ID from Git".to_owned());
+                    }
+                    String::from_utf8(id.to_vec())
+                        .map_err(|error| format!("invalid commit ID from Git: {error}"))
+                })
+                .collect()
+        }
+    }
+}
+
+struct CommitBatch {
+    output: std::process::Output,
+    input_error: Option<String>,
+}
+
+fn read_commit_batch(commits: &[String]) -> Result<CommitBatch, String> {
+    let mut child = cli_policy::git_command()
+        .args(["cat-file", "--batch"])
+        .env("LC_ALL", "C")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("cannot run Git: {error}"))?;
+    let mut stdin = child.stdin.take().expect("piped Git stdin");
+    let requests = format!("{}\n", commits.join("\n"));
+    let writer = std::thread::spawn(move || stdin.write_all(requests.as_bytes()));
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("cannot read Git output: {error}"))?;
+    let input_error = writer
+        .join()
+        .map_err(|_| "cannot write commit IDs to Git".to_owned())?
+        .err()
+        .map(|error| format!("cannot write commit IDs to Git: {error}"));
+    Ok(CommitBatch {
+        output,
+        input_error,
+    })
+}
+
+fn read_batch_message<'a>(
+    output: &'a [u8],
+    cursor: &mut usize,
+    oid: &str,
+) -> Result<&'a [u8], String> {
+    let line_end = output[*cursor..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map(|length| *cursor + length)
+        .ok_or_else(|| format!("cannot read commit {oid}: malformed Git batch output"))?;
+    let header = std::str::from_utf8(&output[*cursor..line_end])
+        .map_err(|error| format!("cannot read commit {oid}: invalid Git batch output: {error}"))?;
+    let fields: Vec<_> = header.split_ascii_whitespace().collect();
+    if fields == [oid, "missing"] {
+        return Err(format!("cannot read commit {oid}: object is unavailable"));
+    }
+    if fields.len() != 3 || fields[0] != oid || fields[1] != "commit" {
+        return Err(format!(
+            "cannot read commit {oid}: malformed Git batch output"
+        ));
+    }
+    let size = fields[2]
+        .parse::<usize>()
+        .map_err(|_| format!("cannot read commit {oid}: invalid object size from Git"))?;
+    let start = line_end + 1;
+    let end = start
+        .checked_add(size)
+        .filter(|end| *end < output.len() && output[*end] == b'\n')
+        .ok_or_else(|| format!("cannot read commit {oid}: truncated Git batch output"))?;
+    let object = &output[start..end];
+    *cursor = end + 1;
+    let separator = object
         .windows(2)
         .position(|window| window == b"\n\n")
         .ok_or_else(|| format!("cannot read commit {oid}: malformed commit object"))?;
-    let message = std::str::from_utf8(&output.stdout[separator + 2..])
-        .map_err(|e| format!("commit {oid} message is not valid UTF-8: {e}"))?;
-    Ok(message.to_owned())
+    Ok(&object[separator + 2..])
 }
 
-fn lint_commit(revision: &str, config: &config::Config, strict: bool) -> Result<u8, String> {
-    let oid = resolve_commit(revision)?;
-    let message = commit_message(&oid)?;
+fn lint_commits(revision: &str, config: &config::Config, strict: bool) -> Result<u8, String> {
+    let commits = selected_commits(revision)?;
+    if commits.is_empty() {
+        return Ok(0);
+    }
+    let batch = read_commit_batch(&commits)?;
+    let mut cursor = 0;
     let mut failed = false;
-    for diagnostic in lint::lint(&message, config) {
-        eprintln!(
-            "{}:{}: {}[{}] {}",
-            oid, diagnostic.line, diagnostic.severity, diagnostic.rule, diagnostic.message
-        );
-        failed |= diagnostic.severity == config::Severity::Error || strict;
+    for oid in &commits {
+        let bytes = read_batch_message(&batch.output.stdout, &mut cursor, oid)?;
+        let message = std::str::from_utf8(bytes)
+            .map_err(|error| format!("commit {oid} message is not valid UTF-8: {error}"))?;
+        for diagnostic in lint::lint(message, config) {
+            eprintln!(
+                "{}:{}: {}[{}] {}",
+                oid, diagnostic.line, diagnostic.severity, diagnostic.rule, diagnostic.message
+            );
+            failed |= diagnostic.severity == config::Severity::Error || strict;
+        }
+    }
+    if cursor != batch.output.stdout.len() {
+        return Err("unexpected extra output from Git while reading commits".to_owned());
+    }
+    if let Some(error) = batch.input_error {
+        return Err(error);
+    }
+    if !batch.output.status.success() {
+        return Err(format!(
+            "cannot read commits from Git: {}",
+            git_error(&batch.output)
+        ));
     }
     Ok(u8::from(failed))
 }
@@ -194,7 +339,7 @@ fn run() -> Result<u8, String> {
 
     if let Some(revision) = args.commits.as_deref() {
         let config = load_config(args.config)?;
-        return lint_commit(revision, &config, args.strict);
+        return lint_commits(revision, &config, args.strict);
     }
 
     let policy = cli_policy::FilterPolicy::from_environment()?;

@@ -1,10 +1,11 @@
 # Using `commit-msg-lint` from an agent
 
-Use `commit-msg-lint` to check one complete commit message. For stored commits and planned revision
-range support, see the [CLI history input guide](cli.md#history-input). Range checks are not yet
-implemented. Run `commit-msg-lint --help-for-agents` to print this guidance. This option prints the bundled Markdown
-without reading standard input, invoking Git, discovering or loading configuration, or reading
-message-filter environment variables. Do not combine it with other arguments.
+Use `commit-msg-lint` to check one complete commit message or commits selected by an explicit Git
+revision range. See the [CLI history input guide](cli.md#history-input) for the supported syntax and
+Git selection semantics. Run `commit-msg-lint --help-for-agents` to print this guidance. This option
+prints the bundled Markdown without reading standard input, invoking Git, discovering or loading
+configuration, or reading message-filter environment variables. Do not combine it with other
+arguments.
 
 ## Provide the message
 
