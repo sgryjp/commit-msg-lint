@@ -11,15 +11,24 @@ pub(crate) fn lint_commits(
 ) -> Result<u8, String> {
     let selection = selected_commits(revision)?;
     let file = retrieve_git_log(&selection)?;
-    let mut records = LogReader::new(file, &selection)?;
+    let mut records = LogReader::new(file, selection.oid_len())?;
     let mut diagnostic_output = io::stderr().lock();
     let mut failed = false;
-    while let Some(record) = records.next_record()? {
-        for diagnostic in lint::lint(&record.message, config) {
+    let mut saw_record = false;
+    while let Some(frame) = records.next_frame()? {
+        // Reject an unexpected ID before reading its potentially large message.
+        if let Selection::Single(expected) = &selection
+            && (saw_record || frame.oid != *expected)
+        {
+            return Err("unexpected commit ID from Git log".to_owned());
+        }
+        let message = records.read_message(&frame)?;
+        saw_record = true;
+        for diagnostic in lint::lint(&message, config) {
             writeln!(
                 diagnostic_output,
                 "{}:{}: {}[{}] {}",
-                record.oid,
+                frame.oid,
                 diagnostic.line,
                 diagnostic.severity,
                 diagnostic.rule,
@@ -28,6 +37,9 @@ pub(crate) fn lint_commits(
             .map_err(|error| format!("cannot write diagnostic to standard error: {error}"))?;
             failed |= diagnostic.severity == config::Severity::Error || strict;
         }
+    }
+    if matches!(selection, Selection::Single(_)) && !saw_record {
+        return Err("missing commit from Git log".to_owned());
     }
     Ok(u8::from(failed))
 }
@@ -97,20 +109,20 @@ fn retrieve_git_log(selection: &Selection) -> Result<File, String> {
     Ok(file)
 }
 
-struct LogRecord {
+struct LogFrame {
     oid: String,
-    message: String,
+    size: u64,
+    payload_position: u64,
 }
 
-struct LogReader<'a> {
+struct LogReader {
     reader: BufReader<File>,
     file_len: u64,
-    selection: &'a Selection,
-    records: usize,
+    oid_len: usize,
 }
 
-impl<'a> LogReader<'a> {
-    fn new(file: File, selection: &'a Selection) -> Result<Self, String> {
+impl LogReader {
+    fn new(file: File, oid_len: usize) -> Result<Self, String> {
         let file_len = file
             .metadata()
             .map_err(|error| format!("cannot inspect Git output: {error}"))?
@@ -118,26 +130,38 @@ impl<'a> LogReader<'a> {
         Ok(Self {
             reader: BufReader::new(file),
             file_len,
-            selection,
-            records: 0,
+            oid_len,
         })
     }
 
-    fn next_record(&mut self) -> Result<Option<LogRecord>, String> {
-        let reader = &mut self.reader;
-        let oid_len = self.selection.oid_len();
-        if reader
+    fn next_frame(&mut self) -> Result<Option<LogFrame>, String> {
+        let Some(size) = self.read_size()? else {
+            return Ok(None);
+        };
+        // Git counts the ID and NUL in the payload size; tformat's newline is outside it.
+        let payload_position = self
+            .reader
+            .stream_position()
+            .map_err(|error| format!("cannot read Git output position: {error}"))?;
+        let oid = self.read_oid(size, payload_position)?;
+        Ok(Some(LogFrame {
+            oid,
+            size,
+            payload_position,
+        }))
+    }
+
+    fn read_size(&mut self) -> Result<Option<u64>, String> {
+        if self
+            .reader
             .fill_buf()
             .map_err(|error| format!("cannot read Git output: {error}"))?
             .is_empty()
         {
-            if matches!(self.selection, Selection::Single(_)) && self.records != 1 {
-                return Err("missing commit from Git log".to_owned());
-            }
             return Ok(None);
         }
         let mut header = Vec::new();
-        (&mut *reader)
+        (&mut self.reader)
             .take(64)
             .read_until(b'\n', &mut header)
             .map_err(|error| format!("cannot read Git output: {error}"))?;
@@ -148,48 +172,62 @@ impl<'a> LogReader<'a> {
             .and_then(|value| std::str::from_utf8(value).ok())
             .and_then(|value| value.parse::<u64>().ok())
             .ok_or_else(|| "malformed Git log size header".to_owned())?;
-        // Git counts the ID and NUL in the payload size; tformat's newline is outside it.
-        let position = reader
-            .stream_position()
-            .map_err(|error| format!("cannot read Git output position: {error}"))?;
-        if size < (oid_len as u64).saturating_add(1)
-            || (oid_len as u64).saturating_add(1) > self.file_len.saturating_sub(position)
+        Ok(Some(size))
+    }
+
+    fn read_oid(&mut self, size: u64, position: u64) -> Result<String, String> {
+        if size < (self.oid_len as u64).saturating_add(1)
+            || (self.oid_len as u64).saturating_add(1) > self.file_len.saturating_sub(position)
         {
             return Err("truncated or invalid Git log frame".to_owned());
         }
-        let mut oid_bytes = vec![0; oid_len];
-        reader
-            .read_exact(&mut oid_bytes)
+        let mut oid = vec![0; self.oid_len];
+        self.reader
+            .read_exact(&mut oid)
             .map_err(|error| format!("cannot read Git commit ID: {error}"))?;
-        if !oid_bytes.iter().all(u8::is_ascii_hexdigit) {
+        if !oid.iter().all(u8::is_ascii_hexdigit) {
             return Err("invalid commit ID from Git log".to_owned());
         }
-        let oid = std::str::from_utf8(&oid_bytes)
-            .map_err(|_| "invalid commit ID from Git log".to_owned())?;
-        if let Selection::Single(expected) = self.selection
-            && (self.records != 0 || oid != expected)
-        {
-            return Err("unexpected commit ID from Git log".to_owned());
-        }
+        String::from_utf8(oid).map_err(|_| "invalid commit ID from Git log".to_owned())
+    }
+
+    fn read_message(&mut self, frame: &LogFrame) -> Result<String, String> {
+        let oid = &frame.oid;
         let mut separator = [0];
-        reader
+        self.reader
             .read_exact(&mut separator)
             .map_err(|error| format!("cannot read commit {oid}: {error}"))?;
         if separator != [0] {
             return Err(format!("malformed Git log frame for commit {oid}"));
         }
-        if size
+        if frame
+            .size
             .checked_add(1)
-            .is_none_or(|length| length > self.file_len.saturating_sub(position))
+            .is_none_or(|length| length > self.file_len.saturating_sub(frame.payload_position))
         {
             return Err(format!("truncated Git log frame for commit {oid}"));
         }
-        let mut remaining = size - oid_len as u64 - 1;
+        let bytes = self.read_payload(frame.size - self.oid_len as u64 - 1, oid)?;
+        self.reader
+            .read_exact(&mut separator)
+            .map_err(|error| format!("cannot read commit {oid}: {error}"))?;
+        if separator != *b"\n" {
+            return Err(format!("malformed Git log terminator for commit {oid}"));
+        }
+        String::from_utf8(bytes).map_err(|error| {
+            format!(
+                "commit {oid} message is not valid UTF-8: {}",
+                error.utf8_error()
+            )
+        })
+    }
+
+    fn read_payload(&mut self, mut remaining: u64, oid: &str) -> Result<Vec<u8>, String> {
         let mut bytes = Vec::new();
         let mut chunk = [0; 8192];
         while remaining > 0 {
             let length = remaining.min(chunk.len() as u64) as usize;
-            reader
+            self.reader
                 .read_exact(&mut chunk[..length])
                 .map_err(|error| format!("cannot read commit {oid}: {error}"))?;
             bytes
@@ -198,23 +236,7 @@ impl<'a> LogReader<'a> {
             bytes.extend_from_slice(&chunk[..length]);
             remaining -= length as u64;
         }
-        reader
-            .read_exact(&mut separator)
-            .map_err(|error| format!("cannot read commit {oid}: {error}"))?;
-        if separator != *b"\n" {
-            return Err(format!("malformed Git log terminator for commit {oid}"));
-        }
-        let message = String::from_utf8(bytes).map_err(|error| {
-            format!(
-                "commit {oid} message is not valid UTF-8: {}",
-                error.utf8_error()
-            )
-        })?;
-        self.records += 1;
-        Ok(Some(LogRecord {
-            oid: oid.to_owned(),
-            message,
-        }))
+        Ok(bytes)
     }
 }
 

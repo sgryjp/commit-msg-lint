@@ -1087,6 +1087,70 @@ fn malformed_or_failed_git_log_output_is_an_operational_error() {
             assert!(stderr(&output).starts_with(&format!("{oid}:1: error[header-format]")));
         }
     }
+    let mut different_id = frame.clone();
+    different_id[id_offset] = if frame[id_offset] == b'0' { b'1' } else { b'0' };
+    let truncated_different_id = different_id[..id_offset + oid.len() + 1].to_vec();
+    let mut duplicate = frame.clone();
+    duplicate.extend_from_slice(&frame);
+    let mut truncated_duplicate = frame.clone();
+    truncated_duplicate.extend_from_slice(&frame[..id_offset + oid.len() + 1]);
+    for (data, expected_error, prior_diagnostic) in [
+        (Vec::new(), "missing commit from Git log", false),
+        (different_id, "unexpected commit ID from Git log", false),
+        (
+            truncated_different_id,
+            "unexpected commit ID from Git log",
+            false,
+        ),
+        (duplicate, "unexpected commit ID from Git log", true),
+        (
+            truncated_duplicate,
+            "unexpected commit ID from Git log",
+            true,
+        ),
+    ] {
+        fs::write(&fake, data).unwrap();
+        let output = dir.command_with_env(
+            &["--config", "rules.jsonc", "--commits", &oid],
+            b"",
+            &[
+                ("PATH", &path),
+                ("REAL_GIT", real_git.to_str().unwrap()),
+                ("FAKE_LOG", fake.to_str().unwrap()),
+                ("FAKE_STATUS", "0"),
+            ],
+        );
+        assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains(expected_error),
+            "{}",
+            stderr(&output)
+        );
+        assert_eq!(
+            stderr(&output).contains("error[header-format]"),
+            prior_diagnostic
+        );
+    }
+
+    fs::write(&fake, b"").unwrap();
+    let empty_range = dir.command_with_env(
+        &["--config", "rules.jsonc", "--commits", "HEAD..HEAD"],
+        b"",
+        &[
+            ("PATH", &path),
+            ("REAL_GIT", real_git.to_str().unwrap()),
+            ("FAKE_LOG", fake.to_str().unwrap()),
+            ("FAKE_STATUS", "0"),
+        ],
+    );
+    assert_eq!(
+        empty_range.status.code(),
+        Some(0),
+        "{}",
+        stderr(&empty_range)
+    );
+    assert!(empty_range.stdout.is_empty() && empty_range.stderr.is_empty());
+
     fs::write(&fake, frame).unwrap();
     let output = dir.command_with_env(
         &["--config", "rules.jsonc", "--commits", &oid],
