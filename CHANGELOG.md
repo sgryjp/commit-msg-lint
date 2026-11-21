@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-22
+
 ### Added
 
 - Lint a Git commit or explicit commit range with `--commits`. Messages use Git's UTF-8 display
   conversion, and shallow repositories are rejected to avoid potentially incomplete history.
+
+### Changed
+
+- Adopted dual MIT and Apache-2.0 licensing for the CLI and Web packages.
+- Expanded the Git hook and commit message compatibility guidance.
 
 ## [0.0.2] - 2026-11-18
 
@@ -37,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The CLI, library, and Web demo share the same linting and configuration behavior;
   the CLI applies Git message filtering before linting by default.
 
-[Unreleased]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.2...HEAD
+[Unreleased]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.3...HEAD
+[0.0.3]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.2...0.0.3
 [0.0.2]: https://github.com/sgryjp/commit-msg-lint/compare/0.0.1...0.0.2
 [0.0.1]: https://github.com/sgryjp/commit-msg-lint/releases/tag/0.0.1

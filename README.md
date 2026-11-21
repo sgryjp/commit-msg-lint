@@ -44,12 +44,12 @@ recipes are separate from this repository's [development hooks](CONTRIBUTING.md#
 ### pre-commit
 
 Add the hook to `.pre-commit-config.yaml`, using a release tag or commit containing
-`.pre-commit-hooks.yaml`. This example uses tag `0.0.2`:
+`.pre-commit-hooks.yaml`. This example uses tag `0.0.3`:
 
 ```yaml
 repos:
   - repo: https://github.com/sgryjp/commit-msg-lint
-    rev: 0.0.2
+    rev: 0.0.3
     hooks:
       - id: commit-msg-lint
 ```
