@@ -1,9 +1,11 @@
 # Using `commit-msg-lint` from an agent
 
-Use `commit-msg-lint` to check one complete commit message. Run
-`commit-msg-lint --help-for-agents` to print this guidance. This option prints the bundled Markdown
-without reading standard input, invoking Git, discovering or loading configuration, or reading
-message-filter environment variables. Do not combine it with other arguments.
+Use `commit-msg-lint` to check one complete commit message or commits selected by an explicit Git
+revision range. See the [CLI history input guide](cli.md#history-input) for the supported syntax and
+Git selection semantics. Run `commit-msg-lint --help-for-agents` to print this guidance. This option
+prints the bundled Markdown without reading standard input, invoking Git, discovering or loading
+configuration, or reading message-filter environment variables. Do not combine it with other
+arguments.
 
 ## Provide the message
 
@@ -21,11 +23,12 @@ commit-msg-lint --edit message.txt
 ```
 
 The CLI does not modify the message. Diagnostics go to standard error and include the source and
-original line number. Exit code `0` means there are no lint errors; warnings can still be printed to
-standard error with exit code `0`. Exit code `1` means a lint error was found, or a warning was
-promoted to failure by `--strict`. Exit code `2` means an argument, configuration, Git, file-read,
-or input-decoding error occurred. `--strict` is opt-in; the linter does not infer that warnings
-should fail based on the caller.
+line number; history line numbers refer to Git's output. Exit code `0` means there are no lint
+errors; warnings can still be printed to
+standard error with exit code `0`. Exit code `1` means a lint error was found, or a Lint Rule warning
+was promoted to failure by `--strict`. Exit code `2` means an argument, configuration, Git,
+file-read, or input-decoding error occurred. History input also returns `2` in a shallow repository.
+`--strict` is opt-in; the linter does not infer that warnings should fail based on the caller.
 
 ## Check a completed message as supplied
 

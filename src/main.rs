@@ -1,4 +1,5 @@
 mod cli_policy;
+mod history;
 
 use clap::Parser;
 use commit_msg_lint::{config, lint, schema};
@@ -10,7 +11,7 @@ use std::process::ExitCode;
 #[command(
     name = "commit-msg-lint",
     version,
-    about = "Lint a commit message using the configured Rules."
+    about = "Lint a message from standard input, a file, or selected Git commits."
 )]
 struct Arguments {
     #[arg(
@@ -21,13 +22,20 @@ struct Arguments {
     edit: Option<PathBuf>,
     #[arg(
         long,
+        value_name = "REVISION-OR-RANGE",
+        conflicts_with = "edit",
+        help = "Lint messages stored in one commit or selected by an explicit Git range."
+    )]
+    commits: Option<String>,
+    #[arg(
+        long,
         value_name = "PATH",
         help = "Use the specified configuration file instead of discovering one."
     )]
     config: Option<PathBuf>,
     #[arg(
         long,
-        help = "Treat warnings as failures for the exit code without changing their severity."
+        help = "Treat Lint Rule warnings as failures without changing their severity."
     )]
     strict: bool,
     #[arg(
@@ -70,6 +78,22 @@ fn discover_config() -> Result<Option<PathBuf>, String> {
     }
 }
 
+fn load_config(config_path: Option<PathBuf>) -> Result<config::Config, String> {
+    let config_path = match config_path {
+        Some(path) => Some(path),
+        None => discover_config()?,
+    };
+    match config_path {
+        Some(path) => {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+            config::Config::parse(&content)
+                .map_err(|e| format!("invalid configuration {}: {e}", path.display()))
+        }
+        None => Ok(config::Config::default()),
+    }
+}
+
 fn write_stdout(content: &str, description: &str) -> Result<(), String> {
     let mut stdout = io::stdout().lock();
     stdout
@@ -108,21 +132,14 @@ fn run() -> Result<u8, String> {
         return Ok(0);
     }
 
+    if let Some(revision) = args.commits.as_deref() {
+        let config = load_config(args.config)?;
+        return history::lint_commits(revision, &config, args.strict);
+    }
+
     let policy = cli_policy::FilterPolicy::from_environment()?;
     let prefix = policy.comment_prefix()?;
-    let config_path = match args.config {
-        Some(path) => Some(path),
-        None => discover_config()?,
-    };
-    let config = match config_path {
-        Some(path) => {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-            config::Config::parse(&content)
-                .map_err(|e| format!("invalid configuration {}: {e}", path.display()))?
-        }
-        None => config::Config::default(),
-    };
+    let config = load_config(args.config)?;
     let (source, input) = match args.edit {
         Some(path) => {
             let content = std::fs::read_to_string(&path)
@@ -159,7 +176,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
-            eprintln!("commit-msg-lint: {error}");
+            let _ = writeln!(io::stderr().lock(), "commit-msg-lint: {error}");
             ExitCode::from(2)
         }
     }

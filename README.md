@@ -1,9 +1,10 @@
 # commit-msg-lint
 
-A Rust CLI that checks a single commit message against Conventional Commit Rules, with configurable
-limits and severities. [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/) without
-installing anything: it checks in-browser without the CLI's comment or scissors filtering. The
-message and configuration are not sent to a server.
+A Rust CLI that checks a commit message or messages stored in selected Git commits against
+Conventional Commit Rules, with configurable limits and severities. [Try the browser
+demo](https://sgryjp.github.io/commit-msg-lint/) without installing anything: it checks in-browser
+without the CLI's comment or scissors filtering. The message and configuration are not sent to a
+server.
 
 ## Design philosophy
 
@@ -24,6 +25,7 @@ From a checkout with the Rust toolchain installed, build and install the CLI:
 cargo install --path .
 printf 'feat: add parser\n' | commit-msg-lint
 commit-msg-lint --edit .git/COMMIT_EDITMSG
+commit-msg-lint --commits HEAD
 ```
 
 For example, `printf 'feat:subject\n' | commit-msg-lint` reports:
@@ -103,13 +105,18 @@ Redirection overwrites the destination files. See the
 
 ## Caveats and current limitations
 
-- Warnings can print while the command succeeds; `--strict` makes them fail. See
+- Lint Rule warnings can print while the command succeeds; `--strict` makes them fail. See
   [exit codes](docs/cli.md#diagnostics-and-exit-codes).
-- CLI comment and scissors filtering is enabled by default and approximates Git cleanup, so the
-  checked content can differ from what Git retains. See [filtering](docs/cli.md#message-filtering).
+- History input accepts one Git revision or explicit two-dot and three-dot ranges, and rejects
+  shallow repositories. The [history input guide](docs/cli.md#history-input) explains Git selection
+  semantics and CI history requirements.
+- For standard input and `--edit`, CLI comment and scissors filtering is enabled by default and
+  approximates Git cleanup, so the checked content can differ from what Git retains. See
+  [filtering](docs/cli.md#message-filtering). History input checks Git's display-oriented messages
+  without those filters; see the [history input limitations](docs/cli.md#history-input).
 - By default, recognized generated-message Headers bypass all Rules, even with `--strict`; matching
   is based on text, not provenance. See [ignored messages](docs/configuration.md#ignored-messages).
-- History or range linting, custom Rules, and hook installation are not currently supported.
+- Custom Rules and hook installation are not currently supported.
 
 ## Using from agents
 
@@ -117,7 +124,8 @@ Run `commit-msg-lint --help-for-agents` or read the [agent usage guide](docs/age
 
 ## Reference
 
-- [CLI](docs/cli.md): options, [filtering](docs/cli.md#message-filtering), and
+- [CLI](docs/cli.md): options, [history input](docs/cli.md#history-input),
+  [filtering](docs/cli.md#message-filtering), and
   [diagnostics and exit codes](docs/cli.md#diagnostics-and-exit-codes)
 - [Configuration](docs/configuration.md): [defaults](docs/configuration.md#built-in-rules),
   [ignored messages](docs/configuration.md#ignored-messages), and Rule settings

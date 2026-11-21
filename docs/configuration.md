@@ -151,8 +151,9 @@ text alone; configure a pattern if needed. No autosquash target or `amend!` repl
 validated. A match silently excludes the entire message, including Body, Footer, width, and control
 characters: no warnings or errors are produced, even with `--strict`. This trades universal width
 and severity enforcement for usable generated-message workflows. Nonmatching messages retain all
-configured Rules and severities. The CLI applies this policy after its usual filtering; the library
-and Web demo apply it to their unfiltered input.
+configured Rules and severities. The CLI applies this policy after its usual filtering for standard
+input and `--edit`; history input applies it to Git's message output without editor filtering. The
+library and Web demo apply it to their unfiltered input.
 
 ## Conventional Commit settings
 
