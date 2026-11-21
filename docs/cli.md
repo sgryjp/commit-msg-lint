@@ -4,16 +4,16 @@
 commit-msg-lint [OPTIONS]
 ```
 
-The CLI checks one commit message from standard input, a file, or a Git commit against configured
-Rules, or prints information with a standalone option. It does not modify messages or install Git
-hooks.
+The CLI checks commit messages from standard input, a file, one Git commit, or an explicit Git
+commit range against configured Rules, or prints information with a standalone option. It does not
+modify messages or install Git hooks.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `--edit <path>` | Read the message from a file instead of standard input. |
-| `--commits <revision>` | Lint the message stored in exactly one Git commit. Conflicts with `--edit`. |
+| `--commits <revision-or-range>` | Lint one commit or commits selected by an explicit Git range. Conflicts with `--edit`. |
 | `--config <path>` | Use the specified configuration file instead of discovering one. |
 | `--strict` | Treat warnings as failures for the exit code, without changing their severity. |
 | `--print-default-config` | Print built-in defaults as editable JSON to stdout and exit. |
@@ -70,12 +70,13 @@ For setup options and troubleshooting, see the [Git hook integration guide](git-
 ## Input
 
 For linting, without `--edit` or `--commits`, the CLI reads standard input until EOF.
-With `--edit`, it reads the entire file and ignores standard input. With `--commits <revision>`,
-the CLI resolves the revision to exactly one commit and reads that commit's stored message; it does
-not walk the commit's ancestors. Branches, tags, and full object IDs are accepted when they resolve
-to commits. Invalid, unavailable, and non-commit revisions are operational errors. A revision
-starting with `-` is rejected to prevent option injection. `--commits` conflicts with `--edit` and
-does not read standard input.
+With `--edit`, it reads the entire file and ignores standard input. With
+`--commits <revision-or-range>`, the CLI reads one commit or the commits selected by an explicit
+two-dot or three-dot range. A single revision resolves to exactly one commit and does not
+walk its ancestors. Branches, tags, and full object IDs are accepted when they resolve to commits.
+Invalid, unavailable, and non-commit revisions or range endpoints are operational errors. A
+revision endpoint starting with `-` is rejected to prevent option injection. `--commits` conflicts
+with `--edit` and does not read standard input.
 
 Input must be valid UTF-8; other encodings are not supported. The CLI does not convert stdin or
 file messages based on Git's `i18n.commitEncoding` setting. History messages are read as stored
@@ -94,8 +95,7 @@ inspect the resulting message separately if it must be checked.
 
 ## History input
 
-**Implementation status:** Single-commit checks are available. Range checks are not yet
-implemented; the range behavior and CI guidance below describe the planned feature.
+Single-commit and explicit range checks are available.
 
 Use `--commits` to check a stored Git commit or a range. The argument must be one revision that
 resolves to a commit, or a range with two explicit endpoints separated by `..` or `...`. Revisions
@@ -114,8 +114,8 @@ These are Git's revision-selection semantics. The selected commits are reported 
 topological order, so parents precede descendants; Git determines the order of unrelated commits.
 Within each commit, diagnostics retain the usual line and Rule ID ordering. Every history
 diagnostic identifies the complete commit object ID and the original one-based message line; the
-object ID length depends on the repository's hash format. A successful run with no diagnostics
-prints nothing. Diagnostics and operational warnings go to standard error.
+object ID length depends on the repository's hash format. A successful run with no diagnostics or
+operational warnings prints nothing. Diagnostics and operational warnings go to standard error.
 
 History linting uses the same discovered configuration as other CLI input, or the file selected by
 `--config`. The configured Lint Rules, severities, Display Column measurement, and Ignored Message
@@ -245,17 +245,18 @@ each message are sorted by line number and then Rule ID. For example,
 <stdin>:1: error[header-format] header does not match the Conventional Commit format
 ```
 
-A successful lint run with no diagnostics prints nothing. Warnings are still printed to standard
-error when they do not cause failure, so exit code `0` does not mean there were no warnings.
+A successful lint run with no diagnostics or operational warnings prints nothing. Warnings are still
+printed to standard error when they do not cause failure, so exit code `0` does not mean there were
+no warnings.
 `--strict` promotes Lint Rule warnings to exit code `1` only when explicitly supplied; the CLI
-does not force strict mode for agents. When range checks are implemented, a shallow-range warning
-alone will not change the exit code. If a Git, read, or decoding error occurs after diagnostics have
-been emitted, those diagnostics remain visible and the command returns `2`. Lint diagnostics and
-command errors are written to standard error.
+does not force strict mode for agents. A shallow-range warning alone does not change the exit code.
+If a Git, read, or decoding error occurs after diagnostics have been emitted, those diagnostics remain
+visible and the command returns `2`. Lint diagnostics and command errors are written to standard
+error.
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | No lint errors; warnings are allowed unless strict. Informational options succeed. Planned range checks will also succeed for a valid empty range or a shallow-range warning alone. |
+| `0` | No lint errors; warnings are allowed unless strict. Informational options, valid empty ranges, and a shallow-range warning alone succeed. |
 | `1` | At least one error diagnostic, or any Lint Rule warning with `--strict`. |
 | `2` | Argument, configuration, Git, message reading, or UTF-8 decoding error. |
 
