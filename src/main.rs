@@ -189,9 +189,13 @@ fn selected_commits(revision: &str) -> Result<Vec<String>, String> {
         ));
     }
     match shallow.stdout.as_slice() {
-        b"true\n" => {
-            eprintln!("warning: shallow repository; commit range selection may be incomplete")
-        }
+        b"true\n" => writeln!(
+            io::stderr().lock(),
+            "warning: shallow repository; commit range selection may be incomplete"
+        )
+        .map_err(|error| {
+            format!("cannot write shallow-range warning to standard error: {error}")
+        })?,
         b"false\n" => {}
         _ => return Err("invalid shallow repository status from Git".to_owned()),
     }
