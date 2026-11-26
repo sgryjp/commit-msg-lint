@@ -1,0 +1,88 @@
+{
+  "pairs": [
+    {
+      "id": "readme",
+      "en": "README.md",
+      "ja": "README.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "contributing",
+      "en": "CONTRIBUTING.md",
+      "ja": "CONTRIBUTING.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "cli",
+      "en": "docs/cli.md",
+      "ja": "docs/cli.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "configuration",
+      "en": "docs/configuration.md",
+      "ja": "docs/configuration.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "message-format",
+      "en": "docs/message-format.md",
+      "ja": "docs/message-format.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "git-hooks",
+      "en": "docs/git-hooks.md",
+      "ja": "docs/git-hooks.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "agent-usage",
+      "en": "docs/agent-usage.md",
+      "ja": "docs/agent-usage.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "agent-domain",
+      "en": "docs/agents/domain.md",
+      "ja": "docs/agents/domain.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "agent-issue-tracker",
+      "en": "docs/agents/issue-tracker.md",
+      "ja": "docs/agents/issue-tracker.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "agent-triage-labels",
+      "en": "docs/agents/triage-labels.md",
+      "ja": "docs/agents/triage-labels.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "adr-0001",
+      "en": "docs/adr/0001-display-column-measurement.md",
+      "ja": "docs/adr/0001-display-column-measurement.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "adr-0002",
+      "en": "docs/adr/0002-default-message-filtering.md",
+      "ja": "docs/adr/0002-default-message-filtering.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "adr-0003",
+      "en": "docs/adr/0003-jsonc-configuration.md",
+      "ja": "docs/adr/0003-jsonc-configuration.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    },
+    {
+      "id": "adr-0004",
+      "en": "docs/adr/0004-git-history-input.md",
+      "ja": "docs/adr/0004-git-history-input.ja.md",
+      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
+    }
+  ]
+}

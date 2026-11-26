@@ -1,5 +1,7 @@
 # Issue tracker: GitHub
 
+[日本語](issue-tracker.ja.md)
+
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all
 operations unless the local-artifact rules below apply.
 

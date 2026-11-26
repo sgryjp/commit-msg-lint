@@ -1,5 +1,7 @@
 # Measuring Line Length with Display Columns
 
+[日本語](0001-display-column-measurement.ja.md)
+
 Measure line length in Display Columns using the `unicode-width` crate’s string-width algorithm,
 not by byte count or grapheme-cluster count. Wide characters, such as Japanese characters, count as
 two columns. Ambiguous-width characters count as one column by default, but can be configured to

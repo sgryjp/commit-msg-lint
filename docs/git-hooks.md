@@ -1,5 +1,7 @@
 # Git hook integration guide
 
+[English](git-hooks.md) | [日本語](git-hooks.ja.md)
+
 For short installation recipes, see [Git hook integrations](../README.md#git-hook-integrations).
 These are consumer integrations; this repository's own development hooks are described in
 [Contributing](../CONTRIBUTING.md#git-hooks).

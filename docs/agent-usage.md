@@ -1,5 +1,7 @@
 # Using `commit-msg-lint` from an agent
 
+[English](agent-usage.md) | [日本語](agent-usage.ja.md)
+
 Use `commit-msg-lint` to check one complete commit message or commits selected by an explicit Git
 revision range. See the [CLI history input guide](cli.md#history-input) for the supported syntax and
 Git selection semantics. Run `commit-msg-lint --help-for-agents` to print this guidance. This option

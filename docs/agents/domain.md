@@ -1,5 +1,7 @@
 # Domain Docs
 
+[日本語](domain.ja.md)
+
 How the engineering skills should consume this repo's domain documentation when
 exploring the codebase.
 

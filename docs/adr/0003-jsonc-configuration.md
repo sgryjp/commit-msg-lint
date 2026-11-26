@@ -1,12 +1,13 @@
-# 設定ファイルに JSONC を採用する
+# Adopt JSONC for Configuration Files
 
-**状態: 実装済み。**
+[日本語](0003-jsonc-configuration.ja.md)
 
-設定ファイルの形式には、コメントと末尾カンマを許可する JSONC を採用する。
+**Status: implemented.**
 
-TOML は人間による記述は行いやすいものの、スキーマ定義に従ったテキストエディタでの
-自動補完や検証には追加の仕組みが必要である。
-その点で JSONC は JSON Schema による自動補完や検証がエコシステムでサポートされて
-おり、かつ人間による記述の行いやすさも優れている。これが選択の理由である。
-ただし JSONC の構文や末尾カンマの扱いはツールによって異なるため、
-CLI と Web デモでは同じ設定解析を使い、受け付ける構文と検証結果を揃える。
+Use JSONC, allowing comments and trailing commas, as the configuration file format.
+
+Although TOML is easy for humans to write, schema-based autocompletion and validation in text
+editors require additional mechanisms. JSONC, by contrast, has ecosystem support for autocompletion
+and validation using JSON Schema while also being easy for humans to write. This is why it was
+chosen. However, JSONC syntax and handling of trailing commas vary between tools, so the CLI and web
+demo use the same configuration parsing to align accepted syntax and validation results.

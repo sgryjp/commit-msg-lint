@@ -1,5 +1,7 @@
 # CLI reference
 
+[English](cli.md) | [日本語](cli.ja.md)
+
 ```text
 commit-msg-lint [OPTIONS]
 ```

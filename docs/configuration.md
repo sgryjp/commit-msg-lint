@@ -1,5 +1,7 @@
 # Configuration reference
 
+[English](configuration.md) | [日本語](configuration.ja.md)
+
 `commit-msg-lint` uses JSONC to override its built-in configuration. Unspecified settings retain
 their built-in defaults; a configuration file does not replace the entire profile. The CLI and Web
 demo use the same configuration format; an empty configuration in the Web demo uses the defaults.

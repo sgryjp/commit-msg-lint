@@ -1,5 +1,7 @@
 # Contributing
 
+[日本語](CONTRIBUTING.ja.md)
+
 This repository validates a Rust CLI and Markdown documents. For agent-specific workflows, see
 [AGENTS.md](AGENTS.md), which is the authoritative guide.
 
@@ -113,6 +115,21 @@ conformance tests, and describe the change in the release notes.
 The design documents under `docs/design/` describe the current implementation. When changing the
 implementation they cover, update them in the same change as the code.
 
+### Translations
+
+The English documents and their Japanese versions are listed in `docs/translation-sync.json`.
+Japanese translations use the `.ja.md` suffix. ADRs at their original paths are authoritative in
+English; their `.ja.md` counterparts are translations. Existing Japanese-only design and research
+documents are not included in the paired translation review.
+
+Contributors may update either language without updating the other. The translations can therefore
+lag behind. Maintainers periodically review and reconcile the paired documents; see the manual
+review procedure below. Keep commands, identifiers, and actual diagnostic output unchanged;
+explanatory comments may be translated. Prefer links to the corresponding Japanese document from
+a Japanese translation when available.
+
+### Markdown lint
+
 Tracked Markdown files are checked with rumdl using `.rumdl.toml`. The line-length rule uses a
 limit of 120 display columns, with exceptions for some long lines. The CJK spacing rule checks for
 spaces between CJK text and adjacent ASCII letters or digits. It also checks the outside of links
@@ -136,6 +153,52 @@ rumdl check --fix README.md docs/cli.md
 
 The hook installs its own copy, so a separate installation is optional. Review the diff after fixing
 and address any remaining diagnostics by hand, preserving the Markdown structure and meaning.
+
+### Manual translation review
+
+The maintainer can review translations at any time; this is not a CI or contribution requirement.
+The review needs Python 3.9 or later, Git, a complete non-shallow history, and a clean working tree
+without untracked files. A review without `--print-prompt` also needs an authenticated Copilot CLI.
+Ignored files are allowed. The configured baseline for each pair is a previously reviewed commit;
+the initial baseline predates the first translations so that the initial additions are included.
+
+1. Select an ID from `docs/translation-sync.json` and preview the evidence:
+
+   ```sh
+   python scripts/check_translation_sync.py review --pair readme --print-prompt
+   ```
+
+2. Run the review without `--print-prompt` and save the SHA printed in `Reviewing through`:
+
+   ```sh
+   python scripts/check_translation_sync.py review --pair readme
+   ```
+
+   The command sends both versions, commit messages, the repository-wide diff, and full contents of
+   changed tracked text files to Copilot. Check that sharing this evidence is appropriate first.
+   The CLI has no tools in this review; it cannot inspect unchanged source files. Omitted binary or
+   other files are identified in the prompt. Large histories can exceed the model's context.
+   Repeat `--pair` to select more pairs, or use `--all` to review all pairs; each pair makes a
+   separate Copilot call and resends its evidence.
+3. Check the report and relevant current implementation yourself, make and commit any corrections,
+   and only then record the reviewed SHA for the pairs you actually reviewed:
+
+   ```sh
+   python scripts/check_translation_sync.py acknowledge --pair readme --reviewed-through <full-sha>
+   ```
+
+   Repeat `--pair` to acknowledge several pairs at the same SHA. Review and commit the resulting
+   `docs/translation-sync.json` change. Commits after that SHA remain in the next review, including
+   any corrections made after the review began. A moved or deleted document needs its mapping
+   updated; missing history or a non-ancestor checkpoint is reported as an error.
+
+Copilot findings are suggestions, not proof of synchronization. Review can miss discrepancies,
+and no checkpoint is advanced automatically. If a review is incomplete, do not acknowledge it.
+Run the script's focused tests with:
+
+```sh
+python -B -m unittest discover -s tests -p test_check_translation_sync.py
+```
 
 ## Git hooks
 

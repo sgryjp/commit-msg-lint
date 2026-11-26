@@ -1,5 +1,7 @@
 # Message format reference
 
+[English](message-format.md) | [日本語](message-format.ja.md)
+
 `commit-msg-lint` checks a UTF-8 commit message as a Header followed by optional Body and Footer
 lines. This reference describes the current implementation, including its Footer heuristic; it is
 not a general-purpose Conventional Commits or Git trailer parser. See the

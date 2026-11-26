@@ -1,5 +1,7 @@
 # commit-msg-lint
 
+[日本語](README.ja.md)
+
 A Rust CLI that checks a commit message or messages stored in selected Git commits against
 Conventional Commit Rules, with configurable limits and severities. [Try the browser
 demo](https://sgryjp.github.io/commit-msg-lint/) without installing anything: it checks in-browser
@@ -15,7 +17,7 @@ server.
   to preserve meaning.
 - Approximate Git cleanup by default for editor and verbose messages, accepting that the CLI can
   check different content from what Git retains
-  ([ADR, in Japanese](docs/adr/0002-default-message-filtering.md)).
+  ([ADR](docs/adr/0002-default-message-filtering.md)).
 
 ## Install and check a message
 
