@@ -103,6 +103,7 @@ class TranslationSyncTests(unittest.TestCase):
             result, _, err = self.run_script("review", "--pair", "guide")
         self.assertEqual(result, 1)
         self.assertIn("status 7", err)
+        self.assertIn("context limit", err)
         command, kwargs = calls[0]
         self.assertIn("--available-tools=", command)
         self.assertIn("--deny-tool=shell", command)
@@ -236,7 +237,83 @@ class TranslationSyncTests(unittest.TestCase):
         self.assertIn("unchanged header\n" + "padding\n" * 50 + "new\n", out)
         self.assertIn("'delete.py' (D): absent", out)
         self.assertIn("'binary.bin' (M): omitted, binary", out)
+        self.assertIn("Binary files", out)
+        self.assertNotIn("GIT binary patch", out)
         self.assertIn("Full tracked content 'reverted.py' (changed in commits; no net diff)", out)
+
+    def test_selective_evidence_includes_pair_and_sources_but_not_other_markdown(self):
+        self.write("en.md", "old English\n")
+        self.write("ja.md", "old Japanese\n")
+        self.write("docs/other 日本.md", "PRIVATE OTHER ORIGINAL\n")
+        self.write("docs/rename old.md", "OTHER RENAMED CONTENT\n")
+        self.write("docs/deleted.MARKDOWN", "OTHER DELETED CONTENT\n")
+        self.write("impl.py", "source header far from diff\n" + "padding\n" * 20 + "old source\n")
+        self.write("old source.py", "renamed source content\n")
+        self.git("add", ".")
+        self.commit("prepare selective evidence")
+        self.config["pairs"][0]["baseline"] = self.head()
+        self.save_config()
+        self.write("en.md", "new English\n")
+        self.write("ja.md", "new Japanese\n")
+        self.write("docs/other 日本.md", "PRIVATE OTHER UPDATED\n")
+        self.git("mv", "docs/rename old.md", "docs/rename 新.md")
+        self.git("rm", "docs/deleted.MARKDOWN")
+        self.git("mv", "old source.py", "new source.py")
+        self.write("impl.py", "source header far from diff\n" + "padding\n" * 20 + "new source\n")
+        self.git("add", ".")
+        self.commit("change selected and related files")
+        result, out, err = self.run_script("review", "--pair", "guide", "--print-prompt")
+        self.assertEqual((result, err), (0, ""))
+        for expected in ("old English", "new English", "old Japanese", "new Japanese",
+                         "-old English", "+new English", "-old Japanese", "+new Japanese",
+                         "source header far from diff\n" + "padding\n" * 20 + "new source",
+                         "-old source", "+new source", "renamed source content",
+                         "docs/other 日本.md", "docs/rename 新.md", "docs/rename old.md",
+                         "docs/deleted.MARKDOWN", "new source.py", "old source.py",
+                         "omitted other Markdown", "inspect related docs", "change selected and related files"):
+            self.assertIn(expected, out)
+        for omitted in ("PRIVATE OTHER ORIGINAL", "PRIVATE OTHER UPDATED", "OTHER RENAMED CONTENT",
+                        "OTHER DELETED CONTENT"):
+            self.assertNotIn(omitted, out)
+
+    def test_empty_review_range_has_no_unrestricted_diff(self):
+        head = self.head()
+        prompt = sync.make_prompt(self.repo, {"id": "same", "en": "en.md", "ja": "ja.md",
+                                              "baseline": head}, head)
+        self.assertIn("English initial", prompt)
+        self.assertIn("Japanese initial", prompt)
+        self.assertIn("[No changed paths.]", prompt)
+        self.assertNotIn("diff --git", prompt)
+        self.assertNotIn("old behavior", prompt)
+
+    def test_only_other_markdown_changes_produce_no_diff(self):
+        baseline = self.head()
+        self.write("docs/unrelated.md", "OMITTED RELATED CONTENT\n")
+        self.git("add", ".")
+        self.commit("add unrelated documentation")
+        prompt = sync.make_prompt(self.repo, {"id": "same", "en": "en.md", "ja": "ja.md",
+                                              "baseline": baseline}, self.head())
+        self.assertIn("docs/unrelated.md", prompt)
+        self.assertIn("omitted other Markdown", prompt)
+        self.assertNotIn("OMITTED RELATED CONTENT", prompt)
+        self.assertNotIn("diff --git", prompt)
+
+    def test_file_to_directory_change_excludes_nested_markdown_diff(self):
+        self.write("node", "old executable\n")
+        self.git("add", ".")
+        self.commit("add node")
+        baseline = self.head()
+        (self.repo / "node").unlink()
+        self.write("node/notes.MD", "NESTED OTHER MARKDOWN\n")
+        self.write("node/code.py", "nested code\n")
+        self.git("add", ".")
+        self.commit("replace node with directory")
+        prompt = sync.make_prompt(self.repo, {"id": "same", "en": "en.md", "ja": "ja.md",
+                                              "baseline": baseline}, self.head())
+        self.assertIn("node/notes.MD", prompt)
+        self.assertNotIn("NESTED OTHER MARKDOWN", prompt)
+        self.assertIn("-old executable", prompt)
+        self.assertIn("+nested code", prompt)
 
     def test_concurrent_head_change_aborts_without_writing(self):
         original_state = sync.state

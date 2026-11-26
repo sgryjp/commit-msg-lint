@@ -174,10 +174,12 @@ the initial baseline predates the first translations so that the initial additio
    python scripts/check_translation_sync.py review --pair readme
    ```
 
-   The command sends both versions, commit messages, the repository-wide diff, and full contents of
-   changed tracked text files to Copilot. Check that sharing this evidence is appropriate first.
-   The CLI has no tools in this review; it cannot inspect unchanged source files. Omitted binary or
-   other files are identified in the prompt. Large histories can exceed the model's context.
+   The command sends both versions and their diffs, commit messages, the changed-path list, and
+   diffs and full current contents of changed non-Markdown tracked text files to Copilot. It omits
+   the contents and diffs of other Markdown documents but lists their paths. Check that sharing this evidence is
+   appropriate first. The CLI has no tools in this review; it cannot inspect unchanged source files
+   or the omitted documents. Omitted binary or other files are identified in the prompt. Large
+   histories can exceed the model's context.
    Repeat `--pair` to select more pairs, or use `--all` to review all pairs; each pair makes a
    separate Copilot call and resends its evidence.
 3. Check the report and relevant current implementation yourself, make and commit any corrections,
