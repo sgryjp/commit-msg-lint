@@ -110,6 +110,9 @@ configuration, or Rules, update the relevant documents and examples alongside th
 When updating the `unicode-width` crate or Unicode data, update the documented versions and
 conformance tests, and describe the change in the release notes.
 
+The design documents under `docs/design/` describe the current implementation. When changing the
+implementation they cover, update them in the same change as the code.
+
 Tracked Markdown files are checked with rumdl using `.rumdl.toml`. The line-length rule uses a
 limit of 120 display columns, with exceptions for some long lines. The CJK spacing rule checks for
 spaces between CJK text and adjacent ASCII letters or digits. It also checks the outside of links
