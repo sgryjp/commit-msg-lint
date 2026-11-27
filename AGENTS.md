@@ -11,8 +11,7 @@ Write issues and pull requests in English, including drafts.
 
 ### Issue tracker
 
-Issues live in this repo's GitHub Issues. `/to-spec` and `/to-tickets` artifacts stay under
-`.scratch/` and are not committed. See `docs/agents/issue-tracker.md`.
+Issues and specs live in this repo's GitHub Issues. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

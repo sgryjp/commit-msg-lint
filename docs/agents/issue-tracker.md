@@ -1,21 +1,7 @@
 # Issue tracker: GitHub
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all
-operations unless the local-artifact rules below apply.
-
-## Local artifacts from engineering skills
-
-`/to-spec` and `/to-tickets` save their artifacts as local Markdown files under
-`.scratch/`; these files are not committed and are not published to GitHub by
-default.
-
-- `/to-spec`: save the spec as `.scratch/<feature-slug>/spec.md`.
-- `/to-tickets`: save one file per ticket under
-  `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in
-  dependency order (blockers first). Include each ticket's blocking edges in its
-  `Blocked by` field.
-
-If the user explicitly asks to publish these artifacts, use GitHub Issues and the conventions below.
+operations.
 
 ## Conventions
 
@@ -87,8 +73,7 @@ either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue, except for `/to-spec` and `/to-tickets`, which follow the
-local-artifact rules above unless the user explicitly asks to publish them.
+Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
