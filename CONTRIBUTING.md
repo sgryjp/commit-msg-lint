@@ -117,17 +117,15 @@ implementation they cover, update them in the same change as the code.
 
 ### Translations
 
-The English documents and their Japanese versions are listed in `docs/translation-sync.json`.
-Japanese translations use the `.ja.md` suffix. ADRs at their original paths are authoritative in
-English; their `.ja.md` counterparts are translations. Existing Japanese-only design and research
-documents are not included in the paired translation review. `docs/agents/` is outside translation
-maintenance; its existing Japanese copies are not maintained.
+Where a document has English and Japanese versions, the English version is authoritative. Japanese
+translations use the `.ja.md` suffix, and the pairs reviewed for synchronization are listed in
+`docs/translation-sync.json`. Existing Japanese-only design and research documents are not included
+in the paired translation review. `docs/agents/` is outside translation maintenance; its existing
+Japanese copies are not maintained.
 
 Contributors may update either language without updating the other. The translations can therefore
 lag behind. Maintainers periodically review and reconcile the paired documents; see the manual
-review procedure below. Keep commands, identifiers, and actual diagnostic output unchanged;
-explanatory comments may be translated. Prefer links to the corresponding Japanese document from
-a Japanese translation when available.
+review procedure below.
 
 ### Markdown lint
 
@@ -163,6 +161,10 @@ Git, a complete non-shallow history, and a clean working tree without untracked 
 installs the script's pinned Pydantic AI dependency and can obtain a suitable Python. Ignored files
 are allowed. The configured baseline for each pair is a previously reviewed commit; the initial
 baseline predates the first translations so that the initial additions are included.
+
+When updating translations, keep commands, identifiers, and actual diagnostic output unchanged;
+explanatory comments may be translated. Prefer links to the corresponding Japanese document from
+a Japanese translation when available.
 
 1. Select an ID from `docs/translation-sync.json` and preview the evidence:
 
