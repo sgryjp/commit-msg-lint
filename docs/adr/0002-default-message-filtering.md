@@ -1,22 +1,30 @@
-# CLI のコメント除外と scissors 切断を既定で有効にする
+# Enable comment stripping and scissors truncation by default in the CLI
 
-CLI は標準入力・`--edit` とも、コメント除外と scissors 切断を既定で有効にし、
-コミットごとの変更は独立した二つの環境変数で指定する。共有設定の書き換えや専用のフック用モードは
-要求しない。公開 `lint(input, config)` と Web デモは従来どおり原文を検査する。
-**状態: 実装済み・検証中。** Windows 固有の動作と Git for Windows での実フック試験は未検証である。
+The CLI enables comment stripping and scissors truncation by default for both standard input and
+`--edit` input. Two independent environment variables allow per-commit overrides. This does not
+require changing shared configuration or using a dedicated hook mode. The public
+`lint(input, config)` API and the web demo continue to lint the original input.
+**Status: Implemented; under validation.** Windows-specific behavior and actual hook testing with
+Git for Windows have not been verified.
 
-`commit-msg` フックでは実効 cleanup 方式や verbose 指定を確定できない。
-特に scissors 切断を既定で無効にすると、`git commit -v` の差分まで検査されうる。
-オーナーは、verbose を含む通常のコミットで驚くような誤拒否を減らすことを優先した。
-その代わり、Git が切断しない条件で本文に正確な scissors 行があれば、後続の違反を見逃す可能性を
-受け入れる。正確な scissors 行を意図的に本文に含めるケースはまれと判断し、標準入力と `--edit` にも
-同じ既定値を適用する。ただし `-m` / `-F` の既定では Git に残るコメント行も検査から除外される。
-Git の最終結果の完全再現は保証せず、Git の指定と検査方針を揃える責任は呼び出し側に置く。
+The `commit-msg` hook cannot determine the effective cleanup mode or whether verbose mode was
+specified. In particular, if scissors truncation is disabled by default, the diff from
+`git commit -v` may also be linted. The owner prioritized reducing surprising false rejections
+for normal commits, including verbose commits. The trade-off is that if the body contains an exact
+scissors line under conditions where Git does not truncate it, violations after that line may go
+undetected. Since intentionally including an exact scissors line in the body is considered rare,
+the same defaults apply to standard input and `--edit`. However, with `-m` / `-F`, comment lines
+that Git retains are also excluded from linting by default. The CLI does not guarantee an exact
+reproduction of Git's final result; callers are responsible for aligning Git's settings with the
+linting policy.
 
-フック専用モードで原文検査を既定に保つ案も検討したが、中心用途のフックに追加指定を要求しない方を
-選んだ。完成済みメッセージを CLI で検査する場合は、両処理を環境変数で無効にする。
-環境変数は Git の動作や入力ファイルを変更せず、検査対象だけを制御する。
+A dedicated hook mode that preserves linting of the original input by default was considered, but
+the decision was not to require extra configuration for the primary hook use case. When using the
+CLI to lint an already completed message, disable both operations through their environment
+variables. These variables do not change Git's behavior or the input file; they only control what
+is linted.
 
-表示幅による測定と、警告・エラーを分けてエージェントの判断余地を残す既存方針は維持する。
-仕様と制約の詳細は[前処理とリントの設計](../design/commit-message-parsing-and-linting.md)を参照す <!-- rumdl-disable-line MD089 -->
-る。
+The existing policies of measuring display width and separating warnings from errors to preserve
+room for agent judgment remain unchanged. See
+[Preprocessing and Linting Design](../design/commit-message-parsing-and-linting.md) <!-- rumdl-disable-line MD089 -->
+for details on the specification and constraints.

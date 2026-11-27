@@ -1,22 +1,27 @@
-# Git 履歴の検査に Git CLI と一時ファイルを使う
+# Use the Git CLI and temporary files to lint Git history
 
-**状態: 決定済み・実装済み。**
+**Status: Decided and implemented.**
 
-履歴入力では、保存された生バイトではなく、`git log` が表示用に生成するコミットメッセージを
-検査する。書式検証では利用者が Git で見る内容を重視し、Git に UTF-8 への変換を任せる。
-その代わり、`%B` は NUL を含むメッセージの NUL 以降を出力しないため、その部分は検査できない。
-Git が変換できず UTF-8 として不正なバイトを返した場合は、置換せずにエラーにする。
+For history input, lint the commit messages as rendered by `git log`, rather than the raw bytes
+stored in the repository. For format validation, prioritize what users see in Git and let Git
+convert the messages to UTF-8. As a result, content after a NUL in a message cannot be checked,
+because `%B` does not output content after a NUL. If Git returns bytes that are invalid UTF-8
+because it could not convert them, report an error rather than replacing them.
 
-リビジョンと範囲の解釈は、`git2` や `gix` で再実装せず、Git CLI に委ねる。
-インストール済み Git と同じ選択意味論を優先するためである。生バイトを得る `git cat-file`
-も検討したが、双方向通信と異常終了時のプロセス管理が複雑になり、表示用メッセージの書式検証には
-その厳密さが不要と判断した。
+Delegate revision and range interpretation to the Git CLI instead of reimplementing it with
+`git2` or `gix`. This prioritizes matching the selection semantics of the installed Git version.
+Using `git cat-file` to obtain raw bytes was also considered, but it would complicate
+bidirectional communication and process management on abnormal termination. That level of
+precision was judged unnecessary for validating the format of rendered messages.
 
-`git log` の出力は一時ファイルに回収してから検査する。大規模な履歴全体をメモリに保持する
-負荷を避けるためである。プロセス起動を伴う以上、一時ファイルによる追加 I/O を受け入れる。
-Git や単一メッセージの処理を含めた全体のメモリ使用量に固定の上限を設ける判断ではない。
+Collect `git log` output in a temporary file before linting it to avoid keeping a large history
+entirely in memory. Since this operation already starts a process, the additional I/O from a
+temporary file is acceptable. This does not establish a fixed limit on total memory usage,
+including Git's own processing or the processing of an individual message.
 
-shallow clone では、単一コミットも含めて履歴検査を拒否する。範囲の両端を解決できても
-コミットが漏れる可能性を重く見るためである。利用者は必要な履歴を事前に取得する。
-警告を出してローカル履歴だけを検査する案と比べ、手軽さを失う代わりに、不完全な範囲を
-成功として扱うリスクを減らす。shallow でないことだけが対象範囲の完全性を保証するわけではない。
+In a shallow clone, reject history linting, including for a single commit. This is because the
+risk of omitting commits is considered more important, even when both ends of a range can be
+resolved. Users must fetch the required history beforehand. Compared with warning and linting
+only the local history, this sacrifices convenience to reduce the risk of treating an incomplete
+range as successful. A repository not being shallow does not, by itself, guarantee that the
+target range is complete.
