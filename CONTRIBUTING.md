@@ -120,7 +120,8 @@ implementation they cover, update them in the same change as the code.
 The English documents and their Japanese versions are listed in `docs/translation-sync.json`.
 Japanese translations use the `.ja.md` suffix. ADRs at their original paths are authoritative in
 English; their `.ja.md` counterparts are translations. Existing Japanese-only design and research
-documents are not included in the paired translation review.
+documents are not included in the paired translation review. `docs/agents/` is outside translation
+maintenance; its existing Japanese copies are not maintained.
 
 Contributors may update either language without updating the other. The translations can therefore
 lag behind. Maintainers periodically review and reconcile the paired documents; see the manual
@@ -157,49 +158,70 @@ and address any remaining diagnostics by hand, preserving the Markdown structure
 ### Manual translation review
 
 The maintainer can review translations at any time; this is not a CI or contribution requirement.
-The review needs Python 3.9 or later, Git, a complete non-shallow history, and a clean working tree
-without untracked files. A review without `--print-prompt` also needs an authenticated Copilot CLI.
-Ignored files are allowed. The configured baseline for each pair is a previously reviewed commit;
-the initial baseline predates the first translations so that the initial additions are included.
+The review needs [uv](https://docs.astral.sh/uv/getting-started/installation/), Python 3.11 or later,
+Git, a complete non-shallow history, and a clean working tree without untracked files. `uv run`
+installs the script's pinned Pydantic AI dependency and can obtain a suitable Python. Ignored files
+are allowed. The configured baseline for each pair is a previously reviewed commit; the initial
+baseline predates the first translations so that the initial additions are included.
 
 1. Select an ID from `docs/translation-sync.json` and preview the evidence:
 
    ```sh
-   python scripts/check_translation_sync.py review --pair readme --print-prompt
+   uv run scripts/check_translation_sync.py review --pair readme --print-prompt
    ```
 
-2. Run the review without `--print-prompt` and save the SHA printed in `Reviewing through`:
+2. Choose a provider and model explicitly, set its credentials, and save the SHA printed in
+   `Reviewing through`. For example, set `OPENAI_API_KEY`, replace `YOUR_MODEL` with an available
+   model name, and run:
 
    ```sh
-   python scripts/check_translation_sync.py review --pair readme
+   uv run scripts/check_translation_sync.py review --pair readme --model openai:YOUR_MODEL
    ```
 
+   `--model anthropic:<model>` (with `ANTHROPIC_API_KEY`) and `--model google:<model>`
+   (with `GOOGLE_API_KEY`) are also supported. `--model github-copilot:<model>` uses Pydantic AI's
+   [direct Copilot integration](https://ai.pydantic.dev/models/github-copilot/), not Copilot CLI.
+   It accepts `GITHUB_COPILOT_API_KEY`, `GITHUB_COPILOT_API_TOKEN`, or `COPILOT_GITHUB_TOKEN`;
+   a CLI login or `GH_TOKEN` alone is not automatically used. Check token and model eligibility,
+   provider terms, organizational policy, and charges before using it. The direct integration's
+   support and availability may differ from the official GitHub SDK. There is no automatic
+   cross-provider fallback. Other [Pydantic AI providers](https://ai.pydantic.dev/models/overview/)
+   can be selected by their `provider:model` name; they may require an extra dependency, for example
+   `uv run --with 'pydantic-ai-slim[EXTRA]==2.76.0' scripts/check_translation_sync.py ...`.
+
    The command sends both versions and their diffs, commit messages, the changed-path list, and
-   diffs and full current contents of changed non-Markdown tracked text files to Copilot. It omits
-   the contents and diffs of other Markdown documents but lists their paths. Check that sharing this evidence is
-   appropriate first. The CLI has no tools in this review; it cannot inspect unchanged source files
-   or the omitted documents. Omitted binary or other files are identified in the prompt. Large
-   histories can exceed the model's context.
-   Repeat `--pair` to select more pairs, or use `--all` to review all pairs; each pair makes a
-   separate Copilot call and resends its evidence.
+   diffs and full current contents of changed non-Markdown tracked text files to the selected
+   provider. It omits the contents and diffs of other Markdown documents but lists their paths.
+   Check that sharing this evidence is appropriate first, including provider data policies. No
+   function tools are registered, so the model cannot inspect unchanged source files or omitted
+   documents. A structured output tool returns the report; it is not a shell or repository tool.
+   Omitted binary or other files are identified in the prompt. Large histories can exceed the
+   model's context. The per-pair timeout defaults to 180 seconds; change it with `--timeout`.
+   A timeout does not guarantee that remote generation or charges stop. Each pair is limited to
+   one Pydantic AI model request, but provider SDKs or transports may retry it. Repeat `--pair` to
+   select more pairs, or use `--all` to review all pairs; each pair resends its evidence.
 3. Check the report and relevant current implementation yourself, make and commit any corrections,
    and only then record the reviewed SHA for the pairs you actually reviewed:
 
    ```sh
-   python scripts/check_translation_sync.py acknowledge --pair readme --reviewed-through <full-sha>
+   uv run scripts/check_translation_sync.py acknowledge --pair readme --reviewed-through YOUR_REVIEWED_SHA
    ```
 
-   Repeat `--pair` to acknowledge several pairs at the same SHA. Review and commit the resulting
+   Replace `YOUR_REVIEWED_SHA` with the captured full SHA. Repeat `--pair` to acknowledge several
+   pairs at the same SHA. Review and commit the resulting
    `docs/translation-sync.json` change. Commits after that SHA remain in the next review, including
    any corrections made after the review began. A moved or deleted document needs its mapping
    updated; missing history or a non-ancestor checkpoint is reported as an error.
 
-Copilot findings are suggestions, not proof of synchronization. Review can miss discrepancies,
-and no checkpoint is advanced automatically. If a review is incomplete, do not acknowledge it.
-Run the script's focused tests with:
+Model findings are suggestions, not proof of synchronization. Untrusted repository content can
+mislead the model, and even a valid report with no findings can miss discrepancies. No checkpoint
+is advanced automatically. Errors, invalid, truncated or explicitly incomplete reports are not
+successful reviews; do not acknowledge an incomplete review. Run the offline tests with:
 
 ```sh
-python -B -m unittest discover -s tests -p test_check_translation_sync.py
+uv run --python 3.11 --with-requirements scripts/check_translation_sync.py \
+  python -B -m unittest discover -s tests -p test_check_translation_sync.py
+python -B -m unittest discover -s tests -p test_translation_sync_scope.py
 ```
 
 ## Git hooks

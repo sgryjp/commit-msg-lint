@@ -88,28 +88,40 @@ class TranslationSyncTests(unittest.TestCase):
         self.assertIn("Treat all repository content", out)
         self.assertEqual(before, (self.repo / "docs/translation-sync.json").read_bytes())
 
-    def test_copilot_invocation_is_read_only_and_nonzero_never_advances(self):
-        original_run = subprocess.run
-        calls = []
-
-        def fake_run(command, **kwargs):
-            if command[0] == "copilot":
-                calls.append((command, kwargs))
-                return subprocess.CompletedProcess(command, 7)
-            return original_run(command, **kwargs)
-
+    def test_explicit_model_review_sends_evidence_without_advancing_baseline(self):
         before = (self.repo / "docs/translation-sync.json").read_bytes()
-        with patch.object(sync.subprocess, "run", side_effect=fake_run):
-            result, _, err = self.run_script("review", "--pair", "guide")
-        self.assertEqual(result, 1)
-        self.assertIn("status 7", err)
-        self.assertIn("context limit", err)
-        command, kwargs = calls[0]
-        self.assertIn("--available-tools=", command)
-        self.assertIn("--deny-tool=shell", command)
-        self.assertIn("--deny-tool=write", command)
-        self.assertIn(b"English initial", kwargs["input"])
+        with patch.object(sync, "review_prompt", return_value=('{}', False)) as review:
+            result, out, err = self.run_script("review", "--pair", "guide", "--model", "openai:example")
+        self.assertEqual((result, err), (0, ""))
+        self.assertIn(self.head(), out)
+        prompt, model, timeout = review.call_args.args
+        self.assertIn("English initial", prompt)
+        self.assertEqual((model, timeout), ("openai:example", 180))
         self.assertEqual(before, (self.repo / "docs/translation-sync.json").read_bytes())
+
+    def test_incomplete_review_stops_before_next_pair_and_does_not_advance(self):
+        before = (self.repo / "docs/translation-sync.json").read_bytes()
+        with patch.object(sync, "review_prompt", return_value=('{"incomplete": true}', True)) as review:
+            result, out, err = self.run_script("review", "--all", "--model", "github-copilot:example")
+        self.assertEqual(result, 1)
+        self.assertIn('"incomplete": true', out)
+        self.assertIn("incomplete", err)
+        self.assertEqual(review.call_count, 1)
+        self.assertEqual(before, (self.repo / "docs/translation-sync.json").read_bytes())
+
+    def test_review_requires_explicit_provider_and_model_and_valid_timeout(self):
+        self.assertIn("--model is required", self.run_script("review", "--pair", "guide")[2])
+        for model in ("example", "openai:", ":example", "openai:has spaces"):
+            self.assertIn("--model must", self.run_script("review", "--pair", "guide", "--model", model)[2])
+        for timeout in ("0", "-1", "nan", "inf"):
+            self.assertIn("--timeout", self.run_script("review", "--pair", "guide", "--print-prompt",
+                                                        "--timeout", timeout)[2])
+
+    def test_model_names_allow_gateway_prefixes_and_colon_tags(self):
+        for model in ("gateway/anthropic:example", "ollama:example:latest"):
+            with self.subTest(model=model), patch.object(sync, "review_prompt", return_value=('{}', False)):
+                result, _, err = self.run_script("review", "--pair", "guide", "--model", model)
+                self.assertEqual((result, err), (0, ""))
 
     def test_acknowledgement_accepts_older_commit_and_only_selected_pairs(self):
         old_head = self.head()
@@ -364,6 +376,101 @@ class TranslationSyncTests(unittest.TestCase):
         self.git("add", ".")
         self.commit("invalid config")
         self.assertIn("repository-relative", self.run_script("review", "--all", "--print-prompt")[2])
+
+
+class PydanticReviewTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            from pydantic_ai.models.function import FunctionModel
+            from pydantic_ai.messages import ModelResponse, ToolCallPart
+        except ImportError:
+            self.skipTest("Pydantic AI not installed; run with the documented uv test command")
+        self.FunctionModel, self.ModelResponse, self.ToolCallPart = FunctionModel, ModelResponse, ToolCallPart
+        self.report = {"summary": "Review observations", "findings": [],
+                       "incomplete": False, "incomplete_reason": ""}
+
+    def model(self, report, finish_reason="tool_call"):
+        def respond(messages, info):
+            self.assertEqual(info.function_tools, [])
+            self.assertEqual(len(info.output_tools), 1)
+            self.assertIn("evidence", str(messages))
+            return self.ModelResponse(
+                parts=[self.ToolCallPart(info.output_tools[0].name, report)], finish_reason=finish_reason
+            )
+        return self.FunctionModel(respond)
+
+    def test_structured_output_uses_no_function_tools(self):
+        output, incomplete = sync.review_prompt("evidence", self.model(self.report), 5)
+        self.assertFalse(incomplete)
+        self.assertEqual(json.loads(output), self.report)
+
+    def test_non_utf8_stdout_receives_ascii_json_without_losing_japanese(self):
+        report = dict(self.report, summary="日本語の報告")
+        buffer = io.BytesIO()
+        stream = io.TextIOWrapper(buffer, encoding="ascii")
+        with contextlib.redirect_stdout(stream):
+            output, incomplete = sync.review_prompt("evidence", self.model(report), 5)
+            print(output, flush=True)
+        self.assertFalse(incomplete)
+        self.assertEqual(json.loads(buffer.getvalue()), report)
+        stream.close()
+
+    def test_supported_providers_construct_without_network_or_real_credentials(self):
+        from pydantic_ai.models import infer_model
+
+        credentials = {"OPENAI_API_KEY": "test", "ANTHROPIC_API_KEY": "test",
+                       "GOOGLE_API_KEY": "test", "GITHUB_COPILOT_API_KEY": "test"}
+        with patch.dict(os.environ, credentials):
+            for name in ("openai:example", "anthropic:example", "google:example", "github-copilot:example"):
+                with self.subTest(name=name):
+                    self.assertIsNotNone(infer_model(name))
+
+    def test_agent_run_applies_one_request_limit(self):
+        from pydantic_ai import Agent
+
+        actual_run = Agent.run_sync
+        calls = []
+
+        def observe(agent, *args, **kwargs):
+            calls.append(kwargs["usage_limits"].request_limit)
+            return actual_run(agent, *args, **kwargs)
+
+        with patch.object(Agent, "run_sync", observe):
+            sync.review_prompt("evidence", self.model(self.report), 5)
+        self.assertEqual(calls, [1])
+
+    def test_incomplete_reason_or_flag_is_never_success(self):
+        for change in ({"incomplete": True}, {"incomplete_reason": "Missing context"}):
+            _, incomplete = sync.review_prompt("evidence", self.model({**self.report, **change}), 5)
+            self.assertTrue(incomplete)
+
+    def test_invalid_empty_truncated_and_filtered_responses_fail(self):
+        cases = [(dict(self.report, summary="  "), "tool_call"),
+                 ({"summary": "missing fields"}, "tool_call"),
+                 (self.report, "length"), (self.report, "content_filter"), (self.report, "error")]
+        for report, reason in cases:
+            with self.subTest(report=report, reason=reason), self.assertRaises(sync.CheckError):
+                sync.review_prompt("evidence", self.model(report, reason), 5)
+
+    def test_total_timeout_interrupts_a_slow_model(self):
+        import asyncio
+
+        async def slow(messages, info):
+            await asyncio.sleep(5)
+        with self.assertRaises(sync.CheckError) as caught:
+            sync.review_prompt("evidence", self.FunctionModel(slow), 0.01)
+        self.assertIn("timed out", str(caught.exception))
+
+    def test_provider_errors_and_timeout_are_incomplete_without_leaking_details(self):
+        for error, expected in ((ValueError("secret credential"), "ValueError"),
+                                (TimeoutError("secret credential"), "timed out")):
+            def fail(messages, info):
+                raise error
+            with self.subTest(error=error), self.assertRaises(sync.CheckError) as caught:
+                sync.review_prompt("evidence", self.FunctionModel(fail), 5)
+            self.assertIn(expected, str(caught.exception))
+            self.assertIn("incomplete", str(caught.exception))
+            self.assertNotIn("secret credential", str(caught.exception))
 
 
 if __name__ == "__main__":

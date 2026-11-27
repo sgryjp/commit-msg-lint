@@ -43,24 +43,6 @@
       "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
     },
     {
-      "id": "agent-domain",
-      "en": "docs/agents/domain.md",
-      "ja": "docs/agents/domain.ja.md",
-      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
-    },
-    {
-      "id": "agent-issue-tracker",
-      "en": "docs/agents/issue-tracker.md",
-      "ja": "docs/agents/issue-tracker.ja.md",
-      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
-    },
-    {
-      "id": "agent-triage-labels",
-      "en": "docs/agents/triage-labels.md",
-      "ja": "docs/agents/triage-labels.ja.md",
-      "baseline": "f4c8359edf7b989c4dd1dc29e0e66a4689cab6ea"
-    },
-    {
       "id": "adr-0001",
       "en": "docs/adr/0001-display-column-measurement.md",
       "ja": "docs/adr/0001-display-column-measurement.ja.md",

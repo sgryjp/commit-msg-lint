@@ -41,6 +41,9 @@ jobs:
         run: python tests/test_pre_commit_hook.py
       - run: python scripts/check_fixture_discovery.py
       - run: python -B -m unittest discover -s tests -p test_sync_config_schema.py
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --python 3.11 --with-requirements scripts/check_translation_sync.py python -B -m unittest discover -s tests -p test_check_translation_sync.py
+      - run: python -B -m unittest discover -s tests -p test_translation_sync_scope.py
 
   web-ui:
     runs-on: ubuntu-latest

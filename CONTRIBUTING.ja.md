@@ -124,6 +124,7 @@ Unicode データを更新する際は、文書化されたバージョンと適
 英語文書とその日本語版は `docs/translation-sync.json` に一覧があります。日本語訳には
 `.ja.md` の接尾辞を使います。元のパスにある ADR は英語を正本とし、対応する `.ja.md` は
 翻訳です。既存の日本語のみの設計文書と調査資料は、対になった翻訳のレビューには含まれません。
+`docs/agents/` は翻訳の保守対象外であり、既存の日本語版も保守していません。
 
 貢献者はもう一方の言語を更新せず、どちらかの言語だけを更新できます。そのため翻訳が遅れることが
 あります。メンテナーは定期的に文書の対をレビューし、内容を揃えます。手動レビューの手順は
@@ -160,49 +161,71 @@ rumdl check --fix README.md docs/cli.md
 ### 翻訳の手動レビュー
 
 メンテナーは任意のタイミングで翻訳をレビューできます。これは CI や貢献時の必須条件では
-ありません。レビューには Python 3.9 以降、Git、完全な非 shallow 履歴、未追跡ファイルのない
-クリーンな作業ツリーが必要です。`--print-prompt` を使わないレビューには認証済みの Copilot CLI も
-必要です。無視されたファイルはあっても構いません。各文書の対の基準は以前にレビューしたコミット
-です。初期基準は最初の翻訳より前のため、初回レビューには翻訳の追加が含まれます。
+ありません。レビューには [uv](https://docs.astral.sh/uv/getting-started/installation/)、
+Python 3.11 以降、Git、完全な非 shallow 履歴、未追跡ファイルのないクリーンな作業ツリーが必要です。
+`uv run` は固定版の Pydantic AI 依存関係をインストールし、適切な Python も取得できます。
+無視されたファイルはあっても構いません。各文書の対の基準は以前にレビューしたコミットです。
+初期基準は最初の翻訳より前のため、初回レビューには翻訳の追加が含まれます。
 
 1. `docs/translation-sync.json` から ID を選び、根拠をプレビューします。
 
    ```sh
-   python scripts/check_translation_sync.py review --pair readme --print-prompt
+   uv run scripts/check_translation_sync.py review --pair readme --print-prompt
    ```
 
-2. `--print-prompt` なしでレビューを実行し、出力の `Reviewing through` に表示された SHA を
-   控えます。
+2. プロバイダーとモデルを明示的に選び、認証情報を設定して実行します。出力の `Reviewing through` に
+   表示された SHA を控えます。例えば `OPENAI_API_KEY` を設定し、`YOUR_MODEL` を利用可能な
+   モデル名に置き換えて次を実行します。
 
    ```sh
-   python scripts/check_translation_sync.py review --pair readme
+   uv run scripts/check_translation_sync.py review --pair readme --model openai:YOUR_MODEL
    ```
 
+   `--model anthropic:<model>`（`ANTHROPIC_API_KEY` を使用）と `--model google:<model>`
+   （`GOOGLE_API_KEY` を使用）も選択できます。`--model github-copilot:<model>` は
+   Copilot CLI ではなく Pydantic AI の
+   [Copilot 直接統合](https://ai.pydantic.dev/models/github-copilot/) を使います。認証には
+   `GITHUB_COPILOT_API_KEY`、`GITHUB_COPILOT_API_TOKEN`、`COPILOT_GITHUB_TOKEN` のいずれかを
+   使用します。CLI のログインや `GH_TOKEN` だけでは自動認証されません。トークンとモデルの利用資格、
+   提供者の利用条件、組織の方針、課金を事前に確認してください。直接統合のサポートや利用可否は
+   GitHub の公式 SDK と異なる場合があります。別のプロバイダーへの自動切り替えはありません。
+   他の [Pydantic AI プロバイダー](https://ai.pydantic.dev/models/overview/) も
+   `provider:model` 形式で選択できます。追加依存関係が必要な場合は、例えば
+   `uv run --with 'pydantic-ai-slim[EXTRA]==2.76.0' scripts/check_translation_sync.py ...` を使います。
+
    このコマンドは両言語版とその差分、コミットメッセージ、変更されたパスの一覧、変更された Markdown 以外の
-   追跡対象テキストファイルの差分と現在の全文を Copilot に送ります。他の Markdown 文書はパスを
-   列挙しますが、内容と差分は省略します。事前に共有してよい内容か確認してください。
-   このレビューでは CLI のツールを使えないため、変更されていないソースファイルや省略された文書を
-   確認できません。省略されたバイナリなどはプロンプトに明示されます。大きな履歴はモデルの
-   コンテキストを超える場合があります。`--pair` を繰り返すと複数の対を、`--all` を使うと
-   すべての対を選択できます。対ごとに Copilot を呼び出し、根拠を再送します。
+   追跡対象テキストファイルの差分と現在の全文を選択したプロバイダーに送ります。他の Markdown 文書は
+   パスを列挙しますが、内容と差分は省略します。提供者のデータ方針を含め、事前に共有してよい内容か
+   確認してください。関数ツールは登録しないため、モデルは変更されていないソースファイルや省略された
+   文書を確認できません。構造化出力ツールはレポートを返すもので、シェルやリポジトリ操作用では
+   ありません。省略されたバイナリなどはプロンプトに明示されます。大きな履歴はモデルのコンテキストを
+   超える場合があります。対ごとのタイムアウトは既定で 180 秒であり、`--timeout` で変更できます。
+   タイムアウト後もリモート側の生成や課金が直ちに止まる保証はありません。対ごとの Pydantic AI の
+   モデル要求は 1 回に制限されますが、プロバイダー SDK や通信層が再試行する場合があります。
+   `--pair` を繰り返すと複数の対を、`--all` を使うとすべての対を選択できます。対ごとに根拠を再送します。
 3. レポートと関連する現在の実装を自分で確認し、必要な修正を行ってコミットします。その後、
    実際にレビューした対についてのみ、確認した SHA を記録します。
 
    ```sh
-   python scripts/check_translation_sync.py acknowledge --pair readme --reviewed-through <full-sha>
+   uv run scripts/check_translation_sync.py acknowledge --pair readme --reviewed-through YOUR_REVIEWED_SHA
    ```
 
-   `--pair` を繰り返すと、同じ SHA で複数の対を確認済みにできます。変更された
+   `YOUR_REVIEWED_SHA` を控えた完全な SHA に置き換えます。`--pair` を繰り返すと、同じ SHA で
+   複数の対を確認済みにできます。変更された
    `docs/translation-sync.json` を確認してコミットしてください。その SHA 以降のコミットは、
    レビュー開始後に行った修正も含めて次回のレビュー対象に残ります。文書の移動や削除時は
    対応関係の更新が必要です。履歴の欠落や祖先でないチェックポイントはエラーとして報告されます。
 
-Copilot の指摘は提案であり、同期の証明ではありません。レビューには見落としがあり得ます。
-チェックポイントが自動的に進むことはありません。レビューが不完全なら確認済みにしないでください。
-スクリプトの対象を絞ったテストは次のように実行します。
+モデルの指摘は提案であり、同期の証明ではありません。信頼できないリポジトリの内容にモデルが
+誘導されることもあり、形式が正しく指摘がないレポートにも見落としがあり得ます。チェックポイントが
+自動的に進むことはありません。エラー、不正または途切れたレポート、不完全と明示されたレポートは
+レビューの成功ではありません。不完全なレビューを確認済みにしないでください。オフラインテストは
+次のように実行します。
 
 ```sh
-python -B -m unittest discover -s tests -p test_check_translation_sync.py
+uv run --python 3.11 --with-requirements scripts/check_translation_sync.py \
+  python -B -m unittest discover -s tests -p test_check_translation_sync.py
+python -B -m unittest discover -s tests -p test_translation_sync_scope.py
 ```
 
 ## Git フック
