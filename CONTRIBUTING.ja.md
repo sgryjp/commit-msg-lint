@@ -182,13 +182,11 @@ Python 3.11 以降、Git、完全な非 shallow 履歴、未追跡ファイル�
    ```
 
    `--model anthropic:<model>`（`ANTHROPIC_API_KEY` を使用）と `--model google:<model>`
-   （`GOOGLE_API_KEY` を使用）も選択できます。`--model github-copilot:<model>` は
-   Copilot CLI ではなく Pydantic AI の
-   [Copilot 直接統合](https://ai.pydantic.dev/models/github-copilot/) を使います。認証には
+   （`GOOGLE_API_KEY` を使用）も選択できます。`--model github-copilot:<model>` は Pydantic AI の
+   [Copilot 統合](https://ai.pydantic.dev/models/github-copilot/) を使います。認証には
    `GITHUB_COPILOT_API_KEY`、`GITHUB_COPILOT_API_TOKEN`、`COPILOT_GITHUB_TOKEN` のいずれかを
-   使用します。CLI のログインや `GH_TOKEN` だけでは自動認証されません。トークンとモデルの利用資格、
-   提供者の利用条件、組織の方針、課金を事前に確認してください。直接統合のサポートや利用可否は
-   GitHub の公式 SDK と異なる場合があります。別のプロバイダーへの自動切り替えはありません。
+   使用します。`GH_TOKEN` は自動で読み込まれません。トークンとモデルの利用資格、提供者の利用条件、
+   組織の方針、課金を事前に確認してください。別のプロバイダーへの自動切り替えはありません。
    他の [Pydantic AI プロバイダー](https://ai.pydantic.dev/models/overview/) も
    `provider:model` 形式で選択できます。追加依存関係が必要な場合は、例えば
    `uv run --with 'pydantic-ai-slim[EXTRA]==2.76.0' scripts/check_translation_sync.py ...` を使います。

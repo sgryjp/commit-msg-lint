@@ -2,13 +2,13 @@
 
 # 翻訳同期レビューにおける Pydantic AI の調査
 
-調査日: 2026-11-27。対象は既存の `scripts/check_translation_sync.py` のレビュー部分であり、実装変更の提案ではなく選択肢の調査である。Pydantic AI の現行文書と公開 wheel、GitHub などの一次資料を確認した。文書は更新されるため、以下の挙動は採用するパッケージ版で再確認する。
+調査日: 2026-11-27。翻訳同期レビューに使う Pydantic AI の文書と公開 wheel、GitHub などの一次資料を確認した。文書は更新されるため、以下の挙動は採用するパッケージ版で再確認する。
 
 ## 結論
 
-Pydantic AI はモデルと認証を切り替えられる Python インターフェースを提供し、Copilot SDK の代わりにもなり得る。**Copilot サブスクリプションも、Pydantic AI の直接統合で利用可能と同プロジェクトは文書化している。** これは GitHub Copilot SDK や CLI を呼び出す経路ではなく、Copilot の OpenAI 互換 Chat Completions に直接接続する経路である。ただし全プラン・全モデルで使えるという意味ではなく、GitHub がこの直接接続を外部アプリ向けに公式サポートしているか、適用条件を満たすかは確認できなかった。契約・組織ポリシーと実際の認証を別途確認する。[Pydantic AI: GitHub Copilot](https://ai.pydantic.dev/models/github-copilot/)
+Pydantic AI はモデルと認証を切り替えられる Python インターフェースを提供する。**Copilot サブスクリプションも、Pydantic AI の直接統合で利用可能と同プロジェクトは文書化している。** この統合は Copilot の OpenAI 互換 Chat Completions に直接接続する。ただし全プラン・全モデルで使えるという意味ではなく、GitHub がこの直接接続を外部アプリ向けに公式サポートしているか、適用条件を満たすかは確認できなかった。契約・組織ポリシーと実際の認証を別途確認する。[Pydantic AI: GitHub Copilot](https://ai.pydantic.dev/models/github-copilot/)
 
-既存方式に近い第一候補は、Git 証拠の収集と人間の承認を今のスクリプトに残し、**モデルに実行ツールを渡さず**、レビュー呼び出しだけを差し替える方式である。複数プロバイダーへの対応と構造化出力を得る一方、Python 依存関係、認証、各社の機能差とデータ取り扱いを管理する必要がある。自動承認を避け、不確実性を人間に残す方針は、推奨と必須を分けて判断の余地を残す本プロジェクトの [設計方針](../../README.md#design-philosophy) と整合する。異常時にレビューを未完了とすることが、柔軟さとのトレードオフである。
+レビューでは Git 証拠をスクリプトが収集し、**モデルに実行ツールを渡さず**、人間が結果を確認する。複数プロバイダーへの対応と構造化出力を得る一方、Python 依存関係、認証、各社の機能差とデータ取り扱いを管理する必要がある。自動承認を避け、不確実性を人間に残す方針は、推奨と必須を分けて判断の余地を残す本プロジェクトの [設計方針](../../README.md#design-philosophy) と整合する。異常時にレビューを未完了とすることが、柔軟さとのトレードオフである。
 
 ## プロバイダー、認証、モデル
 
@@ -18,14 +18,14 @@ Pydantic AI はモデルと認証を切り替えられる Python インターフ
 
 ### GitHub Copilot の直接統合
 
-[Pydantic AI の Copilot 文書](https://ai.pydantic.dev/models/github-copilot/) と、PyPI の [`pydantic-ai-slim` 2.76.0 wheel](https://pypi.org/project/pydantic-ai-slim/2.76.0/#files) を確認した。wheel に `pydantic_ai/models/github_copilot.py`、`providers/github_copilot.py`、OAuth ヘルパーが含まれ、モデルは OpenAI Chat モデル、provider は OpenAI クライアントを使う。`pydantic-ai-slim[openai]` をインストールし、`github-copilot:<model>` または `GitHubCopilotModel` を指定する。調査時に一時環境の Python 3.13.13 で 2.76.0 の両クラスを import できた。**公開済み wheel の機能**であり、開発版文書だけの機能ではない。独自の認証情報を渡す限り SDK や CLI の実行・インストールは不要である。CLI や `gh` で既存トークンを取得することは別の選択肢であり、必須ではない。
+[Pydantic AI の Copilot 文書](https://ai.pydantic.dev/models/github-copilot/) と、PyPI の [`pydantic-ai-slim` 2.76.0 wheel](https://pypi.org/project/pydantic-ai-slim/2.76.0/#files) を確認した。wheel に `pydantic_ai/models/github_copilot.py`、`providers/github_copilot.py`、OAuth ヘルパーが含まれ、モデルは OpenAI Chat モデル、provider は OpenAI クライアントを使う。`pydantic-ai-slim[openai]` をインストールし、`github-copilot:<model>` または `GitHubCopilotModel` を指定する。調査時に一時環境の Python 3.13.13 で 2.76.0 の両クラスを import できた。**公開済み wheel の機能**であり、開発版文書だけの機能ではない。
 
 - `GITHUB_COPILOT_API_KEY`、そのフォールバック `GITHUB_COPILOT_API_TOKEN`、`COPILOT_GITHUB_TOKEN`、または `GitHubCopilotProvider(api_key=...)` を使う。一般の `GH_TOKEN`、`GITHUB_TOKEN` は自動読取しない。Pydantic AI 文書では `gho_` OAuth ユーザートークンや、一部プランの Copilot API トークンが動作するとしている。自身の OAuth アプリの client ID で device flow を使うこともできるが、GitHub ログインの成功は Copilot の利用資格やそのアプリのトークン受理を保証しない。トークン更新・保存はアプリ側の責任である。
-- fine-grained PAT について Pydantic AI は、Individual プランの既定 integration ID では 401 を受けたと報告する。classic PAT は非対応としている。[GitHub の SDK 認証文書](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate) は SDK 向けに fine-grained PAT 等を挙げるが、**SDK の認証対応を直接 API にそのまま適用できない**。
+- fine-grained PAT について Pydantic AI は、Individual プランの既定 integration ID では 401 を受けたと報告する。classic PAT は非対応としている。[Pydantic AI: 認証](https://ai.pydantic.dev/models/github-copilot/#configuration)。
 - 利用できるモデル ID はプラン、組織ポリシー、`Copilot-Integration-Id` に依存する。Pydantic AI の既定 ID は `vscode-chat` で変更可能である。文書の `/models` 照会に同じ ID とトークンを使い、各モデルの `supported_endpoints` に `/chat/completions` があるか確認する。トークンを画面・ログ・シェル履歴に漏らさない。ID が一覧にあっても API が異なれば使えない。現行統合は Copilot の Responses、Messages、realtime、embeddings を実装していない。モデル一覧や reasoning 設定の受理範囲も変化する。
-- Pydantic AI は Copilot の AI credits とモデル別トークン料金を説明するが、実際の課金・上限はプランと経路を確認する。GitHub の [現行料金表](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing) と [旧 premium request 課金](https://docs.github.com/en/copilot/concepts/billing/copilot-requests) は区別する。CLI や SDK の課金規則を直接統合に自動的に当てはめない。文書上、Copilot 経路のコストとコンテキスト窓の情報は取得できず、コスト制限や事前見積もりをそれだけに頼れない。
+- Pydantic AI は Copilot の AI credits とモデル別トークン料金を説明するが、実際の課金・上限はプランと経路を確認する。GitHub の [現行料金表](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing) と [旧 premium request 課金](https://docs.github.com/en/copilot/concepts/billing/copilot-requests) は区別する。利用する統合の課金条件を個別に確認する。文書上、Copilot 経路のコストとコンテキスト窓の情報は取得できず、コスト制限や事前見積もりをそれだけに頼れない。
 
-Pydantic AI 自身による実測・対応説明は確認できたが、GitHub によるこの第三者クライアント、その既定の `vscode-chat` integration ID、任意の OAuth アプリの直接利用に対する明示的なサポート・許諾は確認できなかった。動作するトークンやモデル一覧が得られても、将来の互換性や利用規約への適合は証明されない。特に組織利用では GitHub と管理者に確認し、必要なら GitHub が明示する SDK 経路を選ぶ。GitHub の SDK 認証文書は SDK についての根拠であり、直接 API の保証ではない。
+Pydantic AI 自身による実測・対応説明は確認できたが、GitHub によるこの第三者クライアント、その既定の `vscode-chat` integration ID、任意の OAuth アプリの直接利用に対する明示的なサポート・許諾は確認できなかった。動作するトークンやモデル一覧が得られても、将来の互換性や利用規約への適合は証明されない。特に組織利用では GitHub と管理者に確認する。
 
 ## ツールと安全境界
 
@@ -45,21 +45,21 @@ Pydantic AI は `@agent.tool` や `@agent.tool_plain` で Python 関数を登録
 
 ## 依存関係と実行環境
 
-PEP 723 のインラインメタデータは依存関係の宣言であり、Python 自体や実行器ではない。例えば、Copilot 直接統合または OpenAI 用には次をスクリプトの先頭に置ける。Anthropic、Google 等には対応する extra も必要である。[PEP 723 仕様](https://packaging.python.org/en/latest/specifications/inline-script-metadata/)、[インストール](https://ai.pydantic.dev/install/)
+PEP 723 のインラインメタデータは依存関係の宣言であり、Python 自体や実行器ではない。スクリプトでは OpenAI、Anthropic、Google および Copilot の各プロバイダーに必要な依存関係を宣言する。他のプロバイダーには追加の extra が必要な場合がある。[PEP 723 仕様](https://packaging.python.org/en/latest/specifications/inline-script-metadata/)、[インストール](https://ai.pydantic.dev/install/)
 
 ```python
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pydantic-ai-slim[openai]==2.76.0"]
+# dependencies = ["pydantic-ai-slim[openai,anthropic,google]==2.76.0"]
 # ///
 ```
 
-調査時の PyPI 公開版 `pydantic-ai-slim` 2.76.0 は Python 3.11 以上を要する。[PyPI JSON](https://pypi.org/pypi/pydantic-ai-slim/2.76.0/json)。`uv run script.py` は宣言に基づく環境と Python の探索を扱うが、uv の導入が必要である。[uv](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies)。pip 26.0 以降の `pip install --requirements-from-script script.py` は依存関係をインストールするが、環境作成や実行は別途必要である。[pip](https://pip.pypa.io/en/stable/cli/pip_install/#cmdoption-requirements-from-script)。トップレベルだけのバージョン固定は推移的依存関係の完全固定ではない。固定は再現性を改善する一方、更新・セキュリティ保守の負担を生む。
+調査時の PyPI 公開版 `pydantic-ai-slim` 2.76.0 は Python 3.11 以上を要する。[PyPI JSON](https://pypi.org/pypi/pydantic-ai-slim/2.76.0/json)。`uv run script.py` は宣言に基づく環境と Python の探索を扱うが、uv の導入が必要である。[uv](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies)。トップレベルだけのバージョン固定は推移的依存関係の完全固定ではない。固定は再現性を改善する一方、更新・セキュリティ保守の負担を生む。
 
-## 現行スクリプトとの比較と未検証事項
+## 現行スクリプトと未検証事項
 
-現行の `check_translation_sync.py` はクリーンな作業ツリーと履歴、対ごとの baseline・HEAD の祖先関係を検査し、対象文書の baseline/HEAD、ログ、差分、変更パスと非 Markdown の現在の内容を組み立てる。他の Markdown は内容・差分を省略し、パスを示す。`--print-prompt` は送信前の確認用で、通常の `review` は対ごとに Copilot CLI を起動し、ツール制限を指定する。`acknowledge` は人間が指定した SHA を記録し、レビューは baseline を進めない。現在の CLI 呼び出しにはスクリプト側の時間制限や構造化出力の検証はない。[スクリプト](../../scripts/check_translation_sync.py)
+`check_translation_sync.py` はクリーンな作業ツリーと履歴、対ごとの baseline・HEAD の祖先関係を検査し、対象文書の baseline/HEAD、ログ、差分、変更パスと非 Markdown の現在の内容を組み立てる。他の Markdown は内容・差分を省略し、パスを示す。`--print-prompt` は送信前の確認用で、通常の `review` は対ごとに選択したモデルへ証拠を送り、構造化された結果を検証する。`acknowledge` は人間が指定した SHA を記録し、レビューは baseline を進めない。[スクリプト](../../scripts/check_translation_sync.py)
 
-置換する場合も、証拠の収集範囲・省略の明示、送信前プレビュー、HEAD の固定、対ごとの人間による確認と明示的な `acknowledge` を維持する。Pydantic AI は CLI プロセス起動や CLI 固有フラグを不要にし得るが、依存関係とプロバイダー管理を増やす。制限・モデル差・コンテキスト超過・拒否・部分結果・エラーを成功や承認に変換せず、未完了として表示する。Copilot SDK との比較は [先行調査](2026-11-27-translation-sync-copilot-sdk.md) を参照。
+証拠の収集範囲・省略の明示、送信前プレビュー、HEAD の固定、対ごとの人間による確認と明示的な `acknowledge` を維持する。制限・モデル差・コンテキスト超過・拒否・部分結果・エラーを成功や承認に変換せず、未完了として表示する。
 
-今回の実測は公開 wheel の内容確認と、一時環境での 2.76.0 の import に限る。Copilot を含むいずれのプロバイダーにも実接続しておらず、実アカウントの資格、モデル一覧、トークン種別、課金、組織ポリシー、構造化出力や制限・中断の実挙動、翻訳レビュー品質は検証していない。採用前に承認済みの送信先と非機密のサンプルで確認する。GitHub の直接 API のサポート・利用条件については上記の不確実性が残る。
+今回の実測は公開 wheel の内容確認と、一時環境での 2.76.0 の import に限る。Copilot を含むいずれのプロバイダーにも実接続しておらず、実アカウントの資格、モデル一覧、トークン種別、課金、組織ポリシー、構造化出力や制限・中断の実挙動、翻訳レビュー品質は検証していない。利用前に承認済みの送信先と非機密のサンプルで確認する。GitHub の直接 API のサポート・利用条件については上記の不確実性が残る。

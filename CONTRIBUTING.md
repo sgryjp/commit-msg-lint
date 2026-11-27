@@ -180,12 +180,11 @@ baseline predates the first translations so that the initial additions are inclu
 
    `--model anthropic:<model>` (with `ANTHROPIC_API_KEY`) and `--model google:<model>`
    (with `GOOGLE_API_KEY`) are also supported. `--model github-copilot:<model>` uses Pydantic AI's
-   [direct Copilot integration](https://ai.pydantic.dev/models/github-copilot/), not Copilot CLI.
-   It accepts `GITHUB_COPILOT_API_KEY`, `GITHUB_COPILOT_API_TOKEN`, or `COPILOT_GITHUB_TOKEN`;
-   a CLI login or `GH_TOKEN` alone is not automatically used. Check token and model eligibility,
-   provider terms, organizational policy, and charges before using it. The direct integration's
-   support and availability may differ from the official GitHub SDK. There is no automatic
-   cross-provider fallback. Other [Pydantic AI providers](https://ai.pydantic.dev/models/overview/)
+   [Copilot integration](https://ai.pydantic.dev/models/github-copilot/). It accepts
+   `GITHUB_COPILOT_API_KEY`, `GITHUB_COPILOT_API_TOKEN`, or `COPILOT_GITHUB_TOKEN`; `GH_TOKEN` is
+   not read automatically. Check token and model eligibility, provider terms, organizational policy,
+   and charges before using it. There is no automatic cross-provider fallback. Other
+   [Pydantic AI providers](https://ai.pydantic.dev/models/overview/)
    can be selected by their `provider:model` name; they may require an extra dependency, for example
    `uv run --with 'pydantic-ai-slim[EXTRA]==2.76.0' scripts/check_translation_sync.py ...`.
 
