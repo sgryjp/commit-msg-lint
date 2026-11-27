@@ -18,7 +18,7 @@ modify messages or install Git hooks.
 | `--strict` | Treat Lint Rule warnings as failures. |
 | `--print-default-config` | Print built-in defaults as editable JSON to stdout and exit. |
 | `--print-config-schema` | Print the configuration JSON Schema to stdout and exit. |
-| `--help-for-agents` | Print [agent guidance](agent-usage.md) to stdout and exit successfully. |
+| `--help-for-agents` | Print [agent guidance](../agent-usage.md) to stdout and exit successfully. |
 | `-h`, `--help` | Display command help and exit successfully. |
 | `-V`, `--version` | Print the program name and version to standard output and exit successfully. |
 
@@ -65,7 +65,7 @@ commit-msg-lint --edit "$1"
 To lint a stored commit or range, see [History input](#history-input). The CLI does not install
 the hook, and not every Git commit path invokes it. Git passes the hook its message before final
 cleanup. The same hook command works with the CLI's default [message filtering](#message-filtering).
-For setup options and troubleshooting, see the [Git hook integration guide](git-hooks.md).
+For setup options and troubleshooting, see the [Git hook integration guide](../git-hooks.md).
 
 ## Input
 
@@ -137,7 +137,7 @@ existing unfiltered message and line handling; see [message format](message-form
 
 History input is not a byte-exact audit of stored commit objects. Git's message output stops at an
 embedded NUL: the NUL and any content after it are not checked or diagnosed. See the
-[decision record](adr/0004-git-history-input.md) for the trade-offs.
+[decision record](../adr/0004-git-history-input.md) for the trade-offs.
 
 An invalid, unavailable, or non-commit revision is an operational error, not an empty selection. A
 valid range that selects no commits in a non-shallow repository succeeds without lint diagnostics.
@@ -165,8 +165,8 @@ For standard input and `--edit`, the CLI excludes comment lines and truncates at
 default. It does not rewrite the input file. History input checks Git's message output without these
 filters and does not read or validate the filtering environment variables or resolve a Git comment
 prefix. The public `lint(input, config)` library API and Web demo also check the original input
-without this filtering. See the [design](design/commit-message-parsing-and-linting.md) and
-[decision record](adr/0002-default-message-filtering.md) for the rationale and full constraints.
+without this filtering. See the [design](../design/commit-message-parsing-and-linting.md) and
+[decision record](../adr/0002-default-message-filtering.md) for the rationale and full constraints.
 
 | Environment variable | Effect | Default |
 | --- | --- | --- |

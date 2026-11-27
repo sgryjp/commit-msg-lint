@@ -7,7 +7,7 @@
   使い捨てリポジトリを作って `commit-msg` フックの入力を実測した。実測した記述には「実測」と書く。
   ソースの読解だけで推論した記述には「ソースからの推論」と書く。
 - 目的: commit-msg-lint が将来対応を検討すべき Git 固有の要素の整理。実装方針は決めない。
-- 前提となる既存文書: `docs/message-format.md`、`docs/cli.md`、`README.md` の Design philosophy、
+- 前提となる既存文書: `docs/references/message-format.md`、`docs/references/cli.md`、`README.md` の Design philosophy、
   `TODO.md` の「Message compatibility」。過去の調査
   (`2026-11-09-gitlint-parser-design.md`、`2026-11-09-commitlint-parser-design.md`)の
   scissors / `auto` に関する記述は 8 章で検証する。
@@ -38,8 +38,8 @@
 - 入力は標準入力か `--edit <path>` のファイルで、UTF-8 でなければ入力エラー(終了コード 2)になる。
   CRLF を LF に正規化し、末尾の LF を最大 1 つ除く。コメント除去、Git の cleanup、
   Unicode 正規化は行わない。コメント行や scissors 行も入力としてそのまま検査する。
-  (`docs/message-format.md` の「Input and lines」、`docs/cli.md` の「Input」)
-- フック用途は `commit-msg-lint --edit "$1"` と案内している(`docs/cli.md`)。
+  (`docs/references/message-format.md` の「Input and lines」、`docs/references/cli.md` の「Input」)
+- フック用途は `commit-msg-lint --edit "$1"` と案内している(`docs/references/cli.md`)。
 - 診断の行番号は CRLF 正規化後の 1 始まりで、`<source>` は `<stdin>` か `--edit` のパスである。
 - `TODO.md` には、コメント行・scissors 行がフック入力で有効なコミットを失敗させうるという課題が
   ある。
@@ -374,7 +374,7 @@ else if ((p = strstr(s, pattern.buf))) { ... len = p - s + 1 ...
   同ドキュメントの `trailer.separators` 節。
   現行の linter が有効な trailer とみなす ` #`(スペースとハッシュ。`Refs #123`)は
   Git の既定の trailer 区切りではない。`BREAKING CHANGE` の特別扱いも Git にはない
-  (Conventional Commits 由来)。`docs/message-format.md` は自身を
+  (Conventional Commits 由来)。`docs/references/message-format.md` は自身を
   「Git trailer の一般的なパーサーではない」と明記しているため矛盾ではないが、
   Git の trailer と比較する際の差分として記録する。
 - `git interpret-trailers` は**コメント行を無視する**(`core.commentString`)。
@@ -452,7 +452,7 @@ else if ((p = strstr(s, pattern.buf))) { ... len = p - s + 1 ...
   避けるため)。ただし Git が cleanup で行を削る(先頭の空行の除去、連続空行の圧縮)ため、
   **最終メッセージ上の行番号とは一致しなくなる**。`git commit` の結果の行ではなく、
   利用者が編集したファイルの行を指すと明示する必要がある。
-- 現行の `docs/message-format.md` は「Line numbers in diagnostics are one-based after CRLF
+- 現行の `docs/references/message-format.md` は「Line numbers in diagnostics are one-based after CRLF
   normalization」と定義し、除去を行わない。除去を導入するなら、この定義の変更が必要になる。
 - 範囲の考え方: scissors 行より前を残し、コメント行を除去し、その後で
   Header / Body / Footer に分類する順で行う場合、除去した行は分類に含めず、診断にも出さない。

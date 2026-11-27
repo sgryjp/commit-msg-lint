@@ -55,9 +55,9 @@
 | ファイル | 文数 | 語数 | 平均語数/文 | 25 語超の文 | FKGL | FRE |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | [README](../../README.md) | 40 | 584 | 14.6 | 2 (5%) | 10.3 | 47.1 |
-| [CLI](../cli.md) | 71 | 1,014 | 14.3 | 4 (6%) | 10.1 | 47.6 |
-| [Configuration](../configuration.md) | 105 | 1,249 | 11.9 | 1 (1%) | 10.0 | 44.6 |
-| [Message format](../message-format.md) | 97 | 1,426 | 14.7 | 7 (7%) | 9.9 | 49.7 |
+| [CLI](../references/cli.md) | 71 | 1,014 | 14.3 | 4 (6%) | 10.1 | 47.6 |
+| [Configuration](../references/configuration.md) | 105 | 1,249 | 11.9 | 1 (1%) | 10.0 | 44.6 |
+| [Message format](../references/message-format.md) | 97 | 1,426 | 14.7 | 7 (7%) | 9.9 | 49.7 |
 | [Agent usage](../agent-usage.md) | 22 | 317 | 14.4 | 1 (5%) | 9.6 | 51.8 |
 | [Contributing](../../CONTRIBUTING.md) | 44 | 596 | 13.5 | 2 (5%) | 8.3 | 58.9 |
 | [Glossary](../../GLOSSARY.md) | 14 | 225 | 16.1 | 0 (0%) | 10.6 | 48.0 |
@@ -80,7 +80,8 @@ URL は除き、インラインコードは一律 `item` に置き換えた。�
 
 ```sh
 uv run --with textstat==0.7.13 --with markdown-it-py==4.3.0 python /path/to/script.py \
-  README.md docs/cli.md docs/configuration.md docs/message-format.md docs/agent-usage.md \
+  README.md docs/references/cli.md docs/references/configuration.md \
+  docs/references/message-format.md docs/agent-usage.md \
   CONTRIBUTING.md GLOSSARY.md docs/adr/0001-display-column-measurement.md
 ```
 
@@ -136,7 +137,7 @@ for path in sys.argv[1:]:
 - **良い点**: 利用者向け 5 文書の文長は平均 12〜15 語程度で、指示の多くは動詞から始まる。例、箇条書き、参照先もあり、短
   く具体的に書くという両ガイドの方向におおむね沿っている。受動態があっても、主体より結果が重要な説明では問題とは限らな
   い。
-- **情報密度**: [Message format の Header の説明](../message-format.md#header)には、 <!-- rumdl-disable-line MD089 -->
+- **情報密度**: [Message format の Header の説明](../references/message-format.md#header)には、 <!-- rumdl-disable-line MD089 -->
   複数の Rule と条件を一文にまとめた例がある。Rule ごとの箇条書きにすれば、短文にするだけでなく、対象と条件を照合しやすくなる。既定値や比較方法を落とさない
   ことが前提である。
 - **専門用語**: `scissors`, `provenance`, `heuristic`, `schema` や `severity` は、単語だけでなく Git やこのツールの知識

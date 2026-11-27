@@ -193,7 +193,7 @@ API の最新結果は変化するため、この両端だけでは全 100 件�
 [^github-merge]: GitHub, Pull request merges: <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/about-pull-request-merges>
 [^github-squash]: GitHub, Configuring commit squashing: <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-squashing-for-pull-requests>
 [^github-revert]: GitHub, Reverting a pull request: <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/reverting-a-pull-request>
-[^format]: [本リポジトリ: Message format](../message-format.md)
-[^config]: [本リポジトリ: Configuration](../configuration.md)
+[^format]: [本リポジトリ: Message format](../references/message-format.md)
+[^config]: [本リポジトリ: Configuration](../references/configuration.md)
 [^design]: [本リポジトリ: Design philosophy](../../README.md#design-philosophy)
 [^previous]: [Git 生成件名に対する commitlint・gitlint の扱い](2026-11-17-generated-subjects-commitlint-gitlint.md)、およびそこから参照する Git 入力調査。

@@ -2,7 +2,7 @@
 
 ## 状態と背景
 
-**状態: 実装済み・検証中。** 現行 CLI の使い方は [CLI リファレンス](../cli.md)を参照する。 <!-- rumdl-disable-line MD089 -->
+**状態: 実装済み・検証中。** 現行 CLI の使い方は [CLI リファレンス](../references/cli.md)を参照する。 <!-- rumdl-disable-line MD089 -->
 Windows 固有の動作と Git for Windows での実フック試験は未検証である。
 本設計は、以前の明示フックモードと CLI オプションによる個別制御の案を置き換える。
 判断理由は [ADR-0002](../adr/0002-default-message-filtering.md) に記録する。

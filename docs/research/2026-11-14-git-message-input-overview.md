@@ -37,7 +37,7 @@ Git v2.54.0 のソースに基づく。
   formats](https://git-scm.com/docs/pretty-formats)
 - **任意のファイルや文字列**: 標準入力、ファイル、貼り付けの由来は内容だけでは分からない。現行 CLI
   は標準入力か `--edit` ファイルをそのまま検査する。
-  出典: [CLI 仕様](../cli.md)
+  出典: [CLI 仕様](../references/cli.md)
 - **plumbing / サーバー側**: `git commit-tree` はメッセージからコミットを作る。
   通常の `commit-msg` フックは通らない。
   `pre-receive` の標準入力はメッセージではなく、更新対象の ref とオブジェクト ID である。

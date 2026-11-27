@@ -130,8 +130,8 @@ file as described above. To check or fix specific Markdown files directly, insta
 
 ```sh
 cargo install --locked rumdl --version 0.3.5
-rumdl check README.md docs/cli.md
-rumdl check --fix README.md docs/cli.md
+rumdl check README.md docs/references/cli.md
+rumdl check --fix README.md docs/references/cli.md
 ```
 
 The hook installs its own copy, so a separate installation is optional. Review the diff after fixing

@@ -56,7 +56,7 @@ hook script, use `commit-msg-lint --strict --edit "$1"`. See the
 
 The hook receives a message before Git's final cleanup. The CLI's filtering is an approximation,
 not a reproduction of Git cleanup. Align the Git commit options and linter settings when content
-must be retained. The [CLI filtering reference](cli.md#message-filtering) is authoritative for
+must be retained. The [CLI filtering reference](references/cli.md#message-filtering) is authoritative for
 controls, prefix lookup, their limits, and an example that disables both filtering operations while
 committing a verbatim message. Windows hook behavior and Git for Windows CRLF scissors behavior
 have not been verified.
