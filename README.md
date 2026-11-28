@@ -17,10 +17,16 @@ From a checkout with the Rust toolchain installed, build and install the CLI:
 cargo install --path .
 ```
 
-## Git hook integrations
+## Set up a Git hook
 
-The CLI does not install hooks, and not every commit path runs `commit-msg`. These consumer
-recipes are separate from this repository's [development hooks](CONTRIBUTING.md#git-hooks).
+Choose a setup based on your environment:
+
+- If you use pre-commit, [add the pre-commit hook](#pre-commit). It builds the CLI on first run,
+  so you can skip the CLI installation above.
+- To try the linter locally with Git 2.54 or later, [set up a config-based hook](#config-based-hook).
+  This requires the installed CLI.
+- If you already have a `commit-msg` hook, [add the linter to it](#existing-commit-msg-hook).
+  This also requires the installed CLI.
 
 ### pre-commit
 
@@ -45,14 +51,6 @@ The first run builds the CLI and may need network access. See the
 [Git hook guide](docs/git-hooks.md) for prerequisites, offline use, strict mode, and
 troubleshooting.
 
-### Existing commit-msg hook
-
-In an existing hook, pass Git's message file argument to the installed CLI:
-
-```sh
-commit-msg-lint --edit "$1"
-```
-
 ### Config-based hook
 
 For a lightweight local trial with Git 2.54 or later, first install the CLI and ensure it is on
@@ -67,6 +65,14 @@ Git supplies the message filename to the configured command. Local configuration
 with other clones. Configured hooks run alongside an existing hook, so a hook that also runs this
 linter can cause duplicate checks. See the [Git hook guide](docs/git-hooks.md#config-based-hooks)
 for inspection and removal.
+
+### Existing commit-msg hook
+
+In an existing hook, pass Git's message file argument to the installed CLI:
+
+```sh
+commit-msg-lint --edit "$1"
+```
 
 ## Configure the linter
 

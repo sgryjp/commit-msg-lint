@@ -1,6 +1,6 @@
 # Git hook integration guide
 
-For short installation recipes, see [Git hook integrations](../README.md#git-hook-integrations).
+For short installation recipes, see [Set up a Git hook](../README.md#set-up-a-git-hook).
 These are consumer integrations; this repository's own development hooks are described in
 [Contributing](../CONTRIBUTING.md#git-hooks).
 
