@@ -1,21 +1,13 @@
 # commit-msg-lint
 
-A Rust CLI that checks a commit message or messages stored in selected Git commits against
-Conventional Commit Rules, with configurable limits and severities. [Try the browser
-demo](https://sgryjp.github.io/commit-msg-lint/) without installing anything: it checks in-browser
-without the CLI's comment or scissors filtering. The message and configuration are not sent to a
-server.
+Yet another Git commit message linter focusing on:
 
-## Design philosophy
+1. Warnings for recommended limits, errors for hard limits: room for agents to preserve meaning
+2. EAW-aware line-width checks (East Asian Width)
 
-- Measure display width using East Asian character widths, not character counts. This better
-  reflects commit-log display, although terminal and font rendering can differ
-  ([ADR](docs/adr/0001-display-column-measurement.md)).
-- Separate recommended limits from required ones with warnings and errors, giving agents discretion
-  to preserve meaning.
-- Approximate Git cleanup by default for editor and verbose messages, accepting that the CLI can
-  check different content from what Git retains
-  ([ADR, in Japanese](docs/adr/0002-default-message-filtering.md)).
+It checks commit messages against Conventional Commit by default.
+[Try the browser demo](https://sgryjp.github.io/commit-msg-lint/);
+it does not send your message or configuration to a server.
 
 ## Install and check a message
 
