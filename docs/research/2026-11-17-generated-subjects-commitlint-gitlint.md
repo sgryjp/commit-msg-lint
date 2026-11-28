@@ -175,7 +175,7 @@ fixup=amend 0.18.0 からである。古い導入先に現在の挙動を適用�
 [^git-revert-src]: <https://github.com/git/git/blob/v2.54.0/sequencer.c#L5620-L5635>
 [^git-merge]: <https://git-scm.com/docs/git-fmt-merge-msg>
 [^git-hooks]: <https://git-scm.com/docs/githooks#_commit_msg>
-[^project-design]: [README: Design philosophy](../../README.md#design-philosophy)
+[^project-design]: [Design principles](../design-principles.md)
 [^cl-defaults]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/src/defaults.ts>
 [^cl-ignored]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/is-ignored/src/is-ignored.ts>
 [^cl-lint]: <https://github.com/conventional-changelog/commitlint/blob/v21.2.4/%40commitlint/lint/src/lint.ts>

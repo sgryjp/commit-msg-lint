@@ -200,12 +200,13 @@ Footer とみなす。その行が無効な候補なら `trailer-format` を報�
 のように本文を Footer と誤認し得る。一方、既定の Git の抽出に従うだけでは、空白入りの `BREAKING CHANGE:` や
 `Fixes #…` を拾えない[^format][^previous]。
 
-本ツールの設計方針は、表示桁を計測し、推奨と必須を warning と error で分け、Git の入力整形を近似することである。
+本ツールの設計原則は、表示桁を計測し、推奨と必須を warning と error で分けることである[^design]。
+CLI は入力フィルタを既定で適用するが、Git の最終結果との完全一致は保証しない[^filtering]。
 これらは構文やキーの意味とは別の判断である。長い Footer を知らせる利点はあるが、`Co-authored-by` や URL が
 幅制限で拒否されると、機械可読な形を保ったまま通せないことがある。キーの許可リストは誤認を減らし得るが、
 CC が許す独自キーまで拒否し得る。Git の抽出、CC の構文、サービスやプロジェクトの固有ルールを分ければ、
 違反した規則を明確にできる反面、区分や設定が増える。今回の標本だけで既定ルールの変更は決めない
-[^design][^format][^previous]。
+[^format][^previous]。
 
 ## 出典
 
@@ -236,5 +237,6 @@ CC が許す独自キーまで拒否し得る。Git の抽出、CC の構文、�
 [^chromium]: Chromium, CL footer reference: <https://chromium.googlesource.com/chromium/src/+/HEAD/docs/contributing.md#cl-footer-reference>
 [^freebsd]: FreeBSD, Committer's Guide（Commit Log Messages）: <https://docs.freebsd.org/en/articles/committers-guide/>
 [^format]: [本リポジトリ: Message format](../references/message-format.md)
-[^design]: [本リポジトリ: Design philosophy](../../README.md#design-philosophy)
+[^design]: [本リポジトリ: Design principles](../design-principles.md)
+[^filtering]: [ADR-0002: CLI の既定の入力フィルタ](../adr/0002-default-message-filtering.md)
 [^previous]: [コミットメッセージ流儀と既定設定の適合性](2026-11-20-commit-message-conventions.md)

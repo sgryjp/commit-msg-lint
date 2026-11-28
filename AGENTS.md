@@ -1,7 +1,7 @@
-## Design philosophy
+## Design principles
 
 When designing or reviewing changes, check them against the
-[design philosophy](README.md#design-philosophy) and explain any trade-offs.
+[design principles](docs/design-principles.md) and explain any trade-offs.
 
 ## Issues and pull requests
 

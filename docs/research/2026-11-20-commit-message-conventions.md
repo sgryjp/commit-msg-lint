@@ -168,8 +168,9 @@ API の最新結果は変化するため、この両端だけでは全 100 件�
 
 ## 5. 設計上の読み取りと限界
 
-本プロジェクトは表示幅、推奨と必須の warning / error の分離、Git cleanup の近似を
-設計方針に置く[^design]。Conventional Commits 本体より厳しい既定値には、一貫したログ表示や検査という
+本プロジェクトは表示幅の測定と、推奨と必須の warning / error の分離を設計原則に置く[^design]。
+CLI は入力フィルタを既定で適用するが、Git の最終結果との完全一致は保証しない[^filtering]。
+Conventional Commits 本体より厳しい既定値には、一貫したログ表示や検査という
 利点と、長い URL・帰属情報・自由形式本文などを拒否するトレードオフがある。
 生成形の全体除外も操作性と引き換えに幅・本文などの診断を失う[^config]。
 一方、Go・Linux・Django の流儀を全面的に受け入れることは、Type の意味を検査する対象範囲自体を変える。
@@ -195,5 +196,6 @@ API の最新結果は変化するため、この両端だけでは全 100 件�
 [^github-revert]: GitHub, Reverting a pull request: <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/reverting-a-pull-request>
 [^format]: [本リポジトリ: Message format](../references/message-format.md)
 [^config]: [本リポジトリ: Configuration](../references/configuration.md)
-[^design]: [本リポジトリ: Design philosophy](../../README.md#design-philosophy)
+[^design]: [本リポジトリ: Design principles](../design-principles.md)
+[^filtering]: [ADR-0002: CLI の既定の入力フィルタ](../adr/0002-default-message-filtering.md)
 [^previous]: [Git 生成件名に対する commitlint・gitlint の扱い](2026-11-17-generated-subjects-commitlint-gitlint.md)、およびそこから参照する Git 入力調査。
