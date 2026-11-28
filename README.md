@@ -9,24 +9,13 @@ It checks commit messages against Conventional Commit by default.
 [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/);
 it does not send your message or configuration to a server.
 
-## Install and check a message
+## Install the CLI
 
 From a checkout with the Rust toolchain installed, build and install the CLI:
 
 ```sh
 cargo install --path .
-printf 'feat: add parser\n' | commit-msg-lint
-commit-msg-lint --edit .git/COMMIT_EDITMSG
-commit-msg-lint --commits HEAD
 ```
-
-For example, `printf 'feat:subject\n' | commit-msg-lint` reports:
-
-```text
-<stdin>:1: error[header-format] header does not match the Conventional Commit format
-```
-
-See [diagnostics and exit codes](docs/references/cli.md#diagnostics-and-exit-codes).
 
 ## Git hook integrations
 
