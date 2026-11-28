@@ -5,6 +5,8 @@ Yet another Git commit message linter focusing on:
 1. Warnings for recommended limits, errors for hard limits: room for agents to preserve meaning
 2. EAW-aware line-width checks (East Asian Width)
 
+See the [design principles](docs/design-principles.md).
+
 It checks commit messages against Conventional Commit by default.
 [Try the browser demo](https://sgryjp.github.io/commit-msg-lint/);
 it does not send your message or configuration to a server.

@@ -7,7 +7,7 @@
   使い捨てリポジトリを作って `commit-msg` フックの入力を実測した。実測した記述には「実測」と書く。
   ソースの読解だけで推論した記述には「ソースからの推論」と書く。
 - 目的: commit-msg-lint が将来対応を検討すべき Git 固有の要素の整理。実装方針は決めない。
-- 前提となる既存文書: `docs/references/message-format.md`、`docs/references/cli.md`、`README.md` の Design philosophy、
+- 前提となる既存文書: `docs/references/message-format.md`、`docs/references/cli.md`、調査時点の `README.md` の Design philosophy、
   `TODO.md` の「Message compatibility」。過去の調査
   (`2026-11-09-gitlint-parser-design.md`、`2026-11-09-commitlint-parser-design.md`)の
   scissors / `auto` に関する記述は 8 章で検証する。
@@ -43,8 +43,9 @@
 - 診断の行番号は CRLF 正規化後の 1 始まりで、`<source>` は `<stdin>` か `--edit` のパスである。
 - `TODO.md` には、コメント行・scissors 行がフック入力で有効なコミットを失敗させうるという課題が
   ある。
-  README の Design philosophy は、表示幅の測定と、警告・エラーの区別による判断の余地を掲げている。
+  調査時点の README の Design philosophy は、表示幅の測定と、警告・エラーの区別による判断の余地を掲げていた。
   Git の cleanup 互換はこの 2 項目の外にあるため、仕様として追加するなら別途の位置づけが要る。
+  その後の CLI の入力フィルタに関する判断は [ADR-0002](../adr/0002-default-message-filtering.md) に記録した。
 - 入力経路は 4 種類ある。
   1. フック(`--edit` に Git の作業ファイルを渡す)
   2. 通常ファイル(`--edit`)

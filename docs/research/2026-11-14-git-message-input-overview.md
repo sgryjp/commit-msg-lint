@@ -98,5 +98,5 @@ scissors 行の既定形は次のとおりである。
 また、`--no-verify` や一部の操作では `commit-msg` が呼ばれない。フックだけで全経路を検査できるわけで
 はない。
 
-これらの違いは、README の[設計方針](../../README.md#design-philosophy)にある表示幅の測定と、警告・エ <!-- rumdl-disable-line MD089 -->
+これらの違いは、[設計原則](../design-principles.md)にある表示幅の測定と、警告・エ <!-- rumdl-disable-line MD089 -->
 ラーの使い分けを置き換えるものではない。
