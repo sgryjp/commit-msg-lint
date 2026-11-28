@@ -19,3 +19,6 @@ repos:
     hooks:
       - id: rumdl-check
         stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
+        args: [.]
