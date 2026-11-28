@@ -279,4 +279,5 @@ a Git repository. An explicit file is parsed as JSONC regardless of its extensio
 runnable for discovery; other discovery failures, unreadable files, and invalid configuration are
 errors rather than reasons to use defaults. Configuration is loaded before the message is read.
 
-See the [configuration reference](configuration.md) for the format, defaults, and Rule settings.
+See the [configuration reference](configuration.md) for the format and settings, and the
+[Lint Rules reference](lint-rules.md) for Rule defaults and overrides.

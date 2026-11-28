@@ -100,7 +100,7 @@ commit-msg-lint --print-config-schema > commit-msg-lint.schema.json
 
 Redirection overwrites the destination files. See the
 [configuration reference](docs/references/configuration.md) for discovery and schema compatibility, and the
-[Rule defaults](docs/references/configuration.md#built-in-rules). The
+[Rule defaults](docs/references/lint-rules.md#built-in-rules). The
 [JSONC decision record](docs/adr/0003-jsonc-configuration.md) explains the format choice.
 
 ## Caveats and current limitations
@@ -127,8 +127,9 @@ Run `commit-msg-lint --help-for-agents` or read the [agent usage guide](docs/age
 - [CLI](docs/references/cli.md): options, [history input](docs/references/cli.md#history-input),
   [filtering](docs/references/cli.md#message-filtering), and
   [diagnostics and exit codes](docs/references/cli.md#diagnostics-and-exit-codes)
-- [Configuration](docs/references/configuration.md): [defaults](docs/references/configuration.md#built-in-rules),
-  [ignored messages](docs/references/configuration.md#ignored-messages), and Rule settings
+- [Configuration](docs/references/configuration.md): discovery, schema, and
+  [ignored messages](docs/references/configuration.md#ignored-messages)
+- [Lint Rules](docs/references/lint-rules.md): defaults, severity overrides, and width thresholds
 - [Message format](docs/references/message-format.md): parsing and Rule behavior
 - [Agent usage](docs/agent-usage.md) and [Git hooks](docs/git-hooks.md)
 - [Glossary](GLOSSARY.md) and [decision records](docs/adr/)

@@ -3,8 +3,8 @@
 `commit-msg-lint` checks a UTF-8 commit message as a Header followed by optional Body and Footer
 lines. This reference describes the current implementation, including its Footer heuristic; it is
 not a general-purpose Conventional Commits or Git trailer parser. See the
-[configuration reference](configuration.md) for all settings, default Types, Rule defaults, and
-severity overrides.
+[configuration reference](configuration.md) for configuration settings and default Types, and the
+[Lint Rules reference](lint-rules.md) for Rule defaults and severity overrides.
 
 For example, with the built-in defaults:
 
@@ -174,9 +174,10 @@ By default, Header width above 50 columns is a warning and above 72 is an error;
 lines above 72 columns are errors. A width equal to a limit is allowed. Each width Rule reports at
 most one diagnostic per line, using the severity of the highest exceeded threshold. Footer width
 applies to every line from the detected Footer start onward, not only valid Trailers; Body width
-applies to preceding Body lines. See the configuration reference for threshold overrides and the
-other Rule defaults.
+applies to preceding Body lines. See the [Lint Rules reference](lint-rules.md) for threshold
+overrides and the other Rule defaults.
 
 Diagnostics are sorted by line number and then Rule ID. By default, enabled non-width Rules report
 errors. Warnings do not fail the CLI unless `--strict` is used; errors fail it regardless. See the
-configuration reference for enabling, disabling, and changing the severity of Rules.
+[Lint Rules reference](lint-rules.md#rule-settings) for enabling, disabling, and changing the
+severity of Rules.
